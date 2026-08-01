@@ -1,0 +1,317 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 210 11% 98%; /* #F5F7FA */
+  --foreground: 222 84% 5%; /* #0F172A */
+  --card: 0 0% 100%; /* #FFFFFF */
+  --card-foreground: 222 84% 5%; /* #0F172A */
+  --popover: 0 0% 100%; /* #FFFFFF */
+  --popover-foreground: 222 84% 5%; /* #0F172A */
+  --primary: 221 83% 53%; /* #2563EB */
+  --primary-foreground: 210 40% 98%; /* #F8FAFC */
+  --secondary: 210 40% 94%; /* #E2E8F0 */
+  --secondary-foreground: 222 47% 11%; /* #1E293B */
+  --muted: 210 40% 96%; /* #F1F5F9 */
+  --muted-foreground: 215 16% 47%; /* #64748B */
+  --accent: 210 40% 94%; /* #E2E8F0 */
+  --accent-foreground: 222 47% 11%; /* #1E293B */
+  --destructive: 0 84% 60%; /* #EF4444 */
+  --destructive-foreground: 210 40% 98%; /* #F8FAFC */
+  --border: 214 32% 91%; /* #E2E8F0 */
+  --input: 214 32% 91%; /* #E2E8F0 */
+  --ring: 221 83% 53%; /* #2563EB */
+  --radius: 0.5rem;
+  --chart-1: 221 83% 53%; /* #2563EB */
+  --chart-2: 142 76% 36%; /* #10B981 */
+  --chart-3: 45 93% 47%; /* #F59E0B */
+  --chart-4: 0 84% 60%; /* #EF4444 */
+  --chart-5: 271 91% 65%; /* #A855F7 */
+  --sidebar-background: 0 0% 100%; /* #FFFFFF */
+  --sidebar-foreground: 222 84% 5%; /* #0F172A */
+  --sidebar-primary: 221 83% 53%; /* #2563EB */
+  --sidebar-primary-foreground: 210 40% 98%; /* #F8FAFC */
+  --sidebar-accent: 210 40% 94%; /* #E2E8F0 */
+  --sidebar-accent-foreground: 222 47% 11%; /* #1E293B */
+  --sidebar-border: 214 32% 91%; /* #E2E8F0 */
+  --sidebar-ring: 221 83% 53%; /* #2563EB */
+}
+
+.dark {
+  --background: 222 84% 5%; /* #0F172A */
+  --foreground: 210 40% 98%; /* #F8FAFC */
+  --card: 222 47% 11%; /* #1E293B */
+  --card-foreground: 210 40% 98%; /* #F8FAFC */
+  --popover: 222 47% 11%; /* #1E293B */
+  --popover-foreground: 210 40% 98%; /* #F8FAFC */
+  --primary: 221 83% 53%; /* #2563EB */
+  --primary-foreground: 210 40% 98%; /* #F8FAFC */
+  --secondary: 215 25% 27%; /* #334155 */
+  --secondary-foreground: 210 40% 98%; /* #F8FAFC */
+  --muted: 215 25% 27%; /* #334155 */
+  --muted-foreground: 217 33% 64%; /* #94A3B8 */
+  --accent: 215 25% 27%; /* #334155 */
+  --accent-foreground: 210 40% 98%; /* #F8FAFC */
+  --destructive: 0 84% 60%; /* #EF4444 */
+  --destructive-foreground: 210 40% 98%; /* #F8FAFC */
+  --border: 215 25% 27%; /* #334155 */
+  --input: 215 25% 27%; /* #334155 */
+  --ring: 221 83% 53%; /* #2563EB */
+  --sidebar-background: 222 47% 11%; /* #1E293B */
+  --sidebar-foreground: 210 40% 98%; /* #F8FAFC */
+  --sidebar-primary: 221 83% 53%; /* #2563EB */
+  --sidebar-primary-foreground: 210 40% 98%; /* #F8FAFC */
+  --sidebar-accent: 215 25% 27%; /* #334155 */
+  --sidebar-accent-foreground: 210 40% 98%; /* #F8FAFC */
+  --sidebar-border: 215 25% 27%; /* #334155 */
+  --sidebar-ring: 221 83% 53%; /* #2563EB */
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+@layer components {
+  .growth-park-gradient {
+    background: linear-gradient(135deg, var(--primary) 0%, hsl(221 83% 43%) 100%);
+  }
+  
+  .stats-card {
+    @apply bg-card border border-border rounded-xl p-6 shadow-sm;
+  }
+  
+  .chart-container {
+    @apply bg-card border border-border rounded-xl p-6 shadow-sm;
+  }
+  
+  .activity-item {
+    @apply flex items-start space-x-3 p-3 rounded-lg hover:bg-muted/50 transition-colors;
+  }
+  
+  .sidebar-item {
+    @apply flex items-center space-x-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors;
+  }
+  
+  .sidebar-item-active {
+    @apply bg-primary text-primary-foreground;
+  }
+  
+  .sidebar-item-inactive {
+    @apply text-muted-foreground hover:bg-accent hover:text-accent-foreground;
+  }
+}
+
+/* Supporter table responsive optimizations */
+.supporter-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.supporter-table th,
+.supporter-table td {
+  vertical-align: top;
+  padding: 0.75rem 0.5rem;
+  line-height: 1.4;
+}
+
+/* Responsive table on PC displays */
+@media (min-width: 1024px) {
+  .supporter-table {
+    font-size: 0.875rem;
+  }
+  
+  .supporter-table th,
+  .supporter-table td {
+    padding: 0.5rem;
+    max-height: 4rem;
+    overflow: hidden;
+  }
+  
+  .supporter-table .service-overview {
+    max-height: 3rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  
+  .supporter-table .target-company {
+    max-height: 3.5rem;
+    overflow: hidden;
+  }
+  
+  .supporter-table .company-info {
+    max-height: 3rem;
+    overflow: hidden;
+  }
+}
+
+/* 商談管理テーブルのレスポンシブ対応 */
+.leads-table {
+  table-layout: fixed;
+  width: 100%;
+  font-size: 0.875rem;
+}
+
+.leads-table th,
+.leads-table td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 担当者フィールド専用スタイル */
+.assignee-badge {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 9999px;
+  font-weight: 700;
+  white-space: nowrap;
+  display: inline-block;
+  min-width: fit-content;
+}
+
+/* スマホ対応 (768px以下) */
+@media (max-width: 768px) {
+  .leads-table {
+    font-size: 0.75rem;
+  }
+  
+  .leads-table th,
+  .leads-table td {
+    padding: 0.25rem 0.125rem;
+  }
+  
+  .assignee-badge {
+    font-size: 0.625rem;
+    padding: 0.125rem 0.375rem;
+  }
+  
+  /* スマホでは担当者列を少し狭く */
+  .assignee-col-mobile {
+    width: 4rem;
+    min-width: 4rem;
+  }
+}
+
+/* タブレット対応 (769px - 1023px) */
+@media (min-width: 769px) and (max-width: 1023px) {
+  .leads-table {
+    font-size: 0.8125rem;
+  }
+  
+  .leads-table th,
+  .leads-table td {
+    padding: 0.375rem 0.25rem;
+  }
+  
+  .assignee-badge {
+    font-size: 0.6875rem;
+    padding: 0.1875rem 0.4375rem;
+  }
+  
+  /* タブレットでの担当者列幅 */
+  .assignee-col-tablet {
+    width: 5rem;
+    min-width: 5rem;
+  }
+}
+
+/* PC対応 (1024px - 1439px) */
+@media (min-width: 1024px) and (max-width: 1439px) {
+  .leads-table {
+    font-size: 0.875rem;
+  }
+  
+  .leads-table th,
+  .leads-table td {
+    padding: 0.5rem 0.375rem;
+  }
+  
+  .assignee-badge {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+  }
+  
+  /* PC標準での担当者列幅 */
+  .assignee-col-pc {
+    width: 6rem;
+    min-width: 6rem;
+  }
+}
+
+/* 大画面対応 (1440px以上) */
+@media (min-width: 1440px) {
+  .leads-table {
+    font-size: 0.875rem;
+  }
+  
+  .leads-table th,
+  .leads-table td {
+    padding: 0.75rem 0.5rem;
+  }
+  
+  .assignee-badge {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.625rem;
+  }
+  
+  /* 大画面での担当者列幅 */
+  .assignee-col-large {
+    width: 7rem;
+    min-width: 7rem;
+  }
+}
+
+/* 商談管理ページのセクション間隔調整 */
+.leads-section {
+  margin-bottom: 3rem; /* セクション間の十分な間隔 */
+  padding-bottom: 2rem; /* セクション下部のパディング */
+  border-bottom: 1px solid #e5e7eb; /* セクション境界線 */
+}
+
+.leads-section:last-child {
+  border-bottom: none; /* 最後のセクションには境界線不要 */
+}
+
+/* テーブル行の高さ調整と重なり防止 */
+.leads-table tbody tr {
+  height: auto;
+  min-height: 3rem;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.leads-table tbody tr:hover {
+  background-color: #f9fafb;
+  z-index: 1;
+  position: relative;
+}
+
+/* セル内コンテンツのレイアウト改善 */
+.leads-table td {
+  vertical-align: middle;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.leads-table td.expandable {
+  white-space: normal;
+  max-width: 200px;
+}
+
+/* 列幅調整用のクラス */
+.col-resizable {
+  resize: horizontal;
+  overflow: auto;
+  min-width: 80px;
+  max-width: 300px;
+}
