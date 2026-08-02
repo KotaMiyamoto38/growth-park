@@ -67,12 +67,21 @@ app.use((req, res, next) => {
   // ALWAYS serve the app on port 5000
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
-  const port = 5000;
+  const port = Number(process.env.PORT) || 5000;
   server.listen({
     port,
     host: "0.0.0.0",
     reusePort: true,
   }, () => {
     log(`serving on port ${port}`);
+
+    // Keep-alive: prevent Render free tier from spinning down (15min idle)
+    const selfUrl = process.env.RENDER_EXTERNAL_URL;
+    if (selfUrl) {
+      setInterval(() => {
+        fetch(`${selfUrl}/api/health`).catch(() => {});
+      }, 12 * 60 * 1000); // every 12 minutes
+      log(`keep-alive enabled for ${selfUrl}`);
+    }
   });
 })();

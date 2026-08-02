@@ -46,7 +46,12 @@ const requireRole = (roles: string[]) => {
 };
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  
+
+  // Health check endpoint (used for keep-alive on Render free tier)
+  app.get('/api/health', (_req, res) => {
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+
   // Static file serving for uploads
   app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
