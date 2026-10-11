@@ -12,6 +12,20 @@ import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
+const STAFF_ORDER = ["宮本", "浜野", "芝本", "阿久津"] as const;
+const STAFF_COLORS: Record<(typeof STAFF_ORDER)[number], string> = {
+  宮本: "#3b82f6",
+  浜野: "#14b8a6",
+  芝本: "#f97316",
+  阿久津: "#8b5cf6",
+};
+const CALENDAR_STAFF = [
+  { name: "宮本", email: "k.miyamoto@zettaichi.co.jp" },
+  { name: "浜野", email: "o.hamano@zettaichi.co.jp" },
+  { name: "芝本", email: "w.shibamoto@zettaichi.co.jp" },
+  { name: "阿久津", email: "y.akutsu@zettaichi.co.jp" },
+] as const;
+
 export default function AdminPage() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -50,6 +64,7 @@ export default function AdminPage() {
   const { data: connectedStaff } = useQuery({
     queryKey: ["/api/google/connected-staff"],
     enabled: user?.role === "AddBox",
+    refetchInterval: 5000,
   });
 
   const googleConnectMutation = useMutation({
@@ -71,8 +86,6 @@ export default function AdminPage() {
       toast({ title: "Google Calendar連携を解除しました" });
     },
   });
-
-  const calendarStaff = ["宮本", "芝本", "浜野"];
 
   if (user?.role !== "AddBox") {
     return (
@@ -175,23 +188,25 @@ export default function AdminPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {["宮本", "芝本", "浜野"].map((person) => {
-                const personStats = monthlyStats?.[person] || { inProgress: 0, completed: 0, revenue: 0 };
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {STAFF_ORDER.map((person) => {
+                const personStats = (monthlyStats as any)?.[person] || { inProgress: 0, completed: 0, revenue: 0 };
                 const { inProgress, completed, revenue } = personStats;
                 
                 return (
                   <Card key={person} className={`border-l-4 ${
                     person === "宮本" ? "border-l-blue-500" :
-                    person === "芝本" ? "border-l-orange-500" :
                     person === "浜野" ? "border-l-teal-500" :
+                    person === "芝本" ? "border-l-orange-500" :
+                    person === "阿久津" ? "border-l-violet-500" :
                     "border-l-gray-400"
                   }`}>
                     <CardContent className="pt-4">
                       <div className={`text-lg font-bold ${
                         person === "宮本" ? "text-blue-600" :
-                        person === "芝本" ? "text-orange-600" :
                         person === "浜野" ? "text-teal-600" :
+                        person === "芝本" ? "text-orange-600" :
+                        person === "阿久津" ? "text-violet-600" :
                         "text-gray-600"
                       }`}>
                         {person}
@@ -261,11 +276,10 @@ export default function AdminPage() {
                       }) || [];
                       
                       // 担当者別に分類
-                      const staffColors = { "宮本": "#3b82f6", "芝本": "#f97316", "浜野": "#14b8a6" };
-                      const staffData = ["宮本", "芝本", "浜野"].map(person => ({
+                      const staffData = STAFF_ORDER.map(person => ({
                         person,
                         count: monthlyLeads.filter(lead => lead.assignedPerson === person).length,
-                        color: staffColors[person as keyof typeof staffColors]
+                        color: STAFF_COLORS[person]
                       }));
                       
                       const totalMeetings = monthlyLeads.length;
@@ -307,11 +321,11 @@ export default function AdminPage() {
               
               {/* Legend */}
               <div className="flex justify-center space-x-6 flex-wrap gap-2">
-                {["宮本", "芝本", "浜野"].map((person, index) => (
+                {STAFF_ORDER.map((person) => (
                   <div key={person} className="flex items-center space-x-2">
                     <div 
                       className="w-4 h-4 rounded border"
-                      style={{ backgroundColor: ["#3b82f6", "#f97316", "#14b8a6"][index] }}
+                      style={{ backgroundColor: STAFF_COLORS[person] }}
                     />
                     <span className="text-sm font-medium">{person}</span>
                   </div>
@@ -471,7 +485,7 @@ export default function AdminPage() {
           </CardHeader>
           <CardContent>
             <p className="text-sm text-gray-500 mb-4">
-              担当者のGoogleカレンダーと連携すると、ステータスが「日程確定」になった際に自動で予定が追加されます。
+              各担当者の指定アカウントを連携すると、商談管理で日時を入力してカレンダーボタンを押した際に予定が追加されます。
             </p>
             <Table>
               <TableHeader>
@@ -483,23 +497,29 @@ export default function AdminPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {calendarStaff.map((name) => {
+                {CALENDAR_STAFF.map(({ name, email }) => {
                   const connected = (connectedStaff as any[])?.find((s: any) => s.staffName === name);
+                  const correctlyConnected = connected?.email?.toLowerCase() === email.toLowerCase();
                   return (
                     <TableRow key={name}>
                       <TableCell className="font-medium">{name}</TableCell>
                       <TableCell>
-                        {connected ? (
+                        {correctlyConnected ? (
                           <Badge className="bg-green-100 text-green-800">連携済み</Badge>
+                        ) : connected ? (
+                          <Badge className="bg-amber-100 text-amber-800">再連携が必要</Badge>
                         ) : (
                           <Badge variant="outline" className="text-gray-500">未連携</Badge>
                         )}
                       </TableCell>
                       <TableCell className="text-sm text-gray-600">
-                        {connected?.email || "-"}
+                        <div>{connected?.email || "-"}</div>
+                        {!correctlyConnected && (
+                          <div className="text-xs text-gray-500">指定: {email}</div>
+                        )}
                       </TableCell>
                       <TableCell>
-                        {connected ? (
+                        {correctlyConnected ? (
                           <Button
                             variant="outline"
                             size="sm"

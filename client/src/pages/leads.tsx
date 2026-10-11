@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Header } from "@/components/layout/header";
 import { LeadForm } from "@/components/leads/lead-form";
 import { MeetingReportForm } from "@/components/meeting-reports/meeting-report-form";
@@ -17,6 +17,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 
+const FILTERABLE_STAFF = ["宮本", "浜野", "芝本", "阿久津"] as const;
 const INTERNAL_STAFF = ["森尾", "宮本", "林", "福嶋", "芝本", "棗", "浜野", "阿久津"];
 
 export default function LeadsPage() {
@@ -70,6 +71,10 @@ export default function LeadsPage() {
     queryKey: ['/api/supporters'],
     enabled: !!user
   });
+  const { data: connectors } = useQuery({
+    queryKey: ['/api/admin/connectors'],
+    enabled: user?.role === "AddBox"
+  });
   const deleteMutation = useMutation({
     mutationFn: async (leadId: number) => {
       await apiRequest("DELETE", `/api/leads/${leadId}`);
@@ -109,8 +114,13 @@ export default function LeadsPage() {
       }
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['/api/leads'] });
+      setMeetingDateInputs(prev => {
+        const next = { ...prev };
+        delete next[variables.leadId];
+        return next;
+      });
       toast({
         title: "成功",
         description: "データを更新しました",
@@ -125,14 +135,14 @@ export default function LeadsPage() {
     },
   });
   const addToCalendarMutation = useMutation({
-    mutationFn: async (leadId: number) => {
+    mutationFn: async ({ leadId, meetingDate }: { leadId: number; meetingDate?: string }) => {
       const response = await fetch(`/api/leads/${leadId}/add-to-calendar`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('growth_park_token')}`
         },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ meetingDate }),
       });
       if (!response.ok) {
         let msg = 'カレンダー登録に失敗しました';
@@ -146,8 +156,13 @@ export default function LeadsPage() {
       }
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['/api/leads'] });
+      setMeetingDateInputs(prev => {
+        const next = { ...prev };
+        delete next[variables.leadId];
+        return next;
+      });
       toast({
         title: "成功",
         description: "Googleカレンダーに予定を追加しました。ステータスを「日程確定」に更新しました。",
@@ -253,18 +268,19 @@ export default function LeadsPage() {
     }
   };
   const filteredLeads = leads?.filter((lead: any) => {
+    const connectorName = ((connectors as any[]) || []).find((connector: any) => connector.id === lead.connectorId)?.name || "";
     const matchesSearch = (lead.companyName?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
                          (lead.contactPerson?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
                          (lead.email?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
                          (lead.supporter?.companyName?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
                          (lead.assignedPerson?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+                         connectorName.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          (lead.status?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
                          (lead.meetingFee?.toString() || '').includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === "all" || lead.status === statusFilter;
-    const isInternalStaffLead = !!lead.assignedPerson && INTERNAL_STAFF.includes(lead.assignedPerson);
     const matchesStaff = staffFilter === "all" ||
-      (staffFilter === "internal" && isInternalStaffLead) ||
-      (staffFilter === "connector" && !isInternalStaffLead);
+      (staffFilter.startsWith("staff:") && lead.assignedPerson === staffFilter.slice("staff:".length)) ||
+      (staffFilter.startsWith("connector:") && lead.connectorId === Number(staffFilter.slice("connector:".length)));
     const matchesSupporter = supporterFilter === "all" || lead.supporter?.companyName === supporterFilter;
     const matchesMonth = monthFilter === "all" || (() => {
       const targetDate = lead.meetingDate ? new Date(lead.meetingDate) : new Date(lead.createdAt);
@@ -512,13 +528,30 @@ export default function LeadsPage() {
                   </SelectContent>
                 </Select>
               <Select value={staffFilter} onValueChange={setStaffFilter}>
-                <SelectTrigger className="w-40">
-                  <SelectValue placeholder="担当区分" />
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="担当者・コネクター" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">すべての担当区分</SelectItem>
-                  <SelectItem value="internal">繋いだ担当者</SelectItem>
-                  <SelectItem value="connector">コネクター</SelectItem>
+                  <SelectItem value="all">すべての担当者</SelectItem>
+                  <SelectSeparator />
+                  <SelectGroup>
+                    <SelectLabel>繋いだ担当者</SelectLabel>
+                    {FILTERABLE_STAFF.map((name) => (
+                      <SelectItem key={name} value={`staff:${name}`}>{name}</SelectItem>
+                    ))}
+                  </SelectGroup>
+                  <SelectSeparator />
+                  <SelectGroup>
+                    <SelectLabel>コネクター</SelectLabel>
+                    {((connectors as any[]) || [])
+                      .slice()
+                      .sort((a: any, b: any) => (a.name || "").localeCompare(b.name || "", "ja"))
+                      .map((connector: any) => (
+                        <SelectItem key={connector.id} value={`connector:${connector.id}`}>
+                          {connector.name}
+                        </SelectItem>
+                      ))}
+                  </SelectGroup>
                 </SelectContent>
               </Select>
                 <Select value={supporterFilter} onValueChange={setSupporterFilter}>
@@ -759,11 +792,14 @@ export default function LeadsPage() {
                                   <Copy className="h-3 w-3" />
                                 </Button>
                               )}
-                              {lead.meetingDate && lead.assignedPerson && (
+                              {(meetingDateInputs[lead.id] || lead.meetingDate) && FILTERABLE_STAFF.includes(lead.assignedPerson) && (
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => addToCalendarMutation.mutate(lead.id)}
+                                  onClick={() => addToCalendarMutation.mutate({
+                                    leadId: lead.id,
+                                    meetingDate: meetingDateInputs[lead.id]
+                                  })}
                                   disabled={addToCalendarMutation.isPending}
                                   title="Googleカレンダーに追加"
                                   className="text-green-600 hover:text-green-800 h-7 w-7 p-0 flex-shrink-0"
@@ -985,11 +1021,14 @@ export default function LeadsPage() {
                                   <Copy className="h-3 w-3" />
                                 </Button>
                               )}
-                              {lead.meetingDate && lead.assignedPerson && (
+                              {(meetingDateInputs[lead.id] || lead.meetingDate) && FILTERABLE_STAFF.includes(lead.assignedPerson) && (
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => addToCalendarMutation.mutate(lead.id)}
+                                  onClick={() => addToCalendarMutation.mutate({
+                                    leadId: lead.id,
+                                    meetingDate: meetingDateInputs[lead.id]
+                                  })}
                                   disabled={addToCalendarMutation.isPending}
                                   title="Googleカレンダーに追加"
                                   className="text-green-600 hover:text-green-800 h-7 w-7 p-0 flex-shrink-0"

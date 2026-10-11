@@ -581,7 +581,7 @@ export class DatabaseStorage implements IStorage {
     const stats: { [person: string]: { inProgress: number; completed: number; revenue: number; } } = {};
     
     // 担当者別に集計
-    ["森尾", "宮本", "林", "福嶋", "芝本", "浜野"].forEach(person => {
+    ["宮本", "浜野", "芝本", "阿久津"].forEach(person => {
       // 進行中の案件（どの月でも継続してカウント）
       const ongoingLeads = allLeads.filter((lead: any) => {
         return lead.assignedPerson === person && lead.status === "進行中";

@@ -990,24 +990,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!lead) {
         return res.status(404).json({ message: "リードが見つかりません" });
       }
-      if (!lead.meetingDate) {
+      let meetingDate = lead.meetingDate;
+      if (req.body.meetingDate) {
+        const submittedDate = String(req.body.meetingDate);
+        meetingDate = submittedDate.includes('+') || submittedDate.includes('Z')
+          ? new Date(submittedDate)
+          : new Date(`${submittedDate}+09:00`);
+        if (Number.isNaN(meetingDate.getTime())) {
+          return res.status(400).json({ message: "商談日時の形式が正しくありません" });
+        }
+      }
+      if (!meetingDate) {
         return res.status(400).json({ message: "商談日時が設定されていません" });
       }
       if (!lead.assignedPerson) {
         return res.status(400).json({ message: "担当者が設定されていません" });
       }
 
-      const meetingDateStr = lead.meetingDate instanceof Date 
-        ? lead.meetingDate.toISOString()
-        : String(lead.meetingDate);
+      const meetingDateStr = meetingDate instanceof Date
+        ? meetingDate.toISOString()
+        : String(meetingDate);
       const supporterData = lead.supporterId ? await storage.getSupporter(lead.supporterId) : null;
       const supporterName = supporterData ? supporterData.companyName : "未設定";
       const summary = `トスアップ同席:${supporterName}×${lead.companyName} ${lead.contactPerson}さま`;
       const description = [
         `企業名: ${lead.companyName}`,
+        lead.companyWebsite ? `HP: ${lead.companyWebsite}` : "",
+        lead.businessContent ? `事業内容: ${lead.businessContent}` : "",
+        lead.position ? `役職: ${lead.position}` : "",
         `担当者: ${lead.contactPerson}さま`,
+        lead.contactInfo ? `連絡先: ${lead.contactInfo}` : "",
         `支援先: ${supporterName}`,
+        supporterData?.serviceName ? `サービス名: ${supporterData.serviceName}` : "",
         lead.needs ? `ニーズ: ${lead.needs}` : "",
+        lead.source ? `紹介経路: ${lead.source}` : "",
+        lead.meetingFee != null ? `商談フィー: ¥${Number(lead.meetingFee).toLocaleString("ja-JP")}` : "",
+        `繋いだ担当者: ${lead.assignedPerson}`,
+        lead.assignedPersonSub && lead.assignedPersonSub !== "なし" ? `繋いだ担当者（サブ）: ${lead.assignedPersonSub}` : "",
+        lead.dealLinkContact ? `商談リンク担当: ${lead.dealLinkContact}` : "",
+        lead.dealLinkUrl ? `商談リンク: ${lead.dealLinkUrl}` : "",
       ].filter(Boolean).join("\n");
 
       console.log(`Add to calendar: staffName=${lead.assignedPerson}, meetingDate=${meetingDateStr}, summary=${summary}`);
@@ -1017,14 +1038,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         summary,
         description,
         meetingDateStr,
-        lead.dealLinkUrl || undefined
+        lead.dealLinkUrl || undefined,
+        id
       );
 
       if (!result) {
         return res.status(400).json({ message: `${lead.assignedPerson}のGoogleカレンダー連携が未設定です。管理画面で連携してください。` });
       }
 
-      await storage.updateLead(id, { status: "日程確定" });
+      await storage.updateLead(id, { status: "日程確定", meetingDate });
 
       res.json({ message: "カレンダーに追加しました", event: result });
     } catch (error: any) {
@@ -1393,9 +1415,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           </body>
         </html>
       `);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Google OAuth callback error:", error);
-      res.status(500).send("Google認証に失敗しました。もう一度お試しください。");
+      res.status(400).type("text/plain").send(`Google認証に失敗しました: ${error?.message || "もう一度お試しください。"}`);
     }
   });
 

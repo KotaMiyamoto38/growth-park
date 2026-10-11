@@ -6,9 +6,21 @@ import { eq } from "drizzle-orm";
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI
+  || (process.env.RENDER_EXTERNAL_URL
+    ? `${process.env.RENDER_EXTERNAL_URL}/api/auth/google/callback`
+    : undefined)
   || (process.env.REPLIT_DOMAINS
     ? `https://${process.env.REPLIT_DOMAINS.split(",")[0]}/api/auth/google/callback`
-    : "http://localhost:5000/api/auth/google/callback");
+    : process.env.NODE_ENV === "production"
+      ? "https://growth-park.onrender.com/api/auth/google/callback"
+      : "http://localhost:5000/api/auth/google/callback");
+
+export const EXPECTED_CALENDAR_EMAILS: Record<string, string> = {
+  "宮本": "k.miyamoto@zettaichi.co.jp",
+  "浜野": "o.hamano@zettaichi.co.jp",
+  "芝本": "w.shibamoto@zettaichi.co.jp",
+  "阿久津": "y.akutsu@zettaichi.co.jp",
+};
 
 function createOAuth2Client() {
   return new google.auth.OAuth2(
@@ -19,6 +31,12 @@ function createOAuth2Client() {
 }
 
 export function getAuthUrl(staffName: string) {
+  if (!EXPECTED_CALENDAR_EMAILS[staffName]) {
+    throw new Error("Googleカレンダー連携の対象外の担当者です");
+  }
+  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
+    throw new Error("Google OAuthの環境設定が不足しています");
+  }
   console.log(`Google OAuth: Using redirect URI: ${REDIRECT_URI}`);
   const oauth2Client = createOAuth2Client();
   const encodedState = Buffer.from(staffName, "utf-8").toString("base64");
@@ -40,6 +58,10 @@ export async function handleCallback(code: string, staffName: string) {
   const oauth2 = google.oauth2({ version: "v2", auth: oauth2Client });
   const userInfo = await oauth2.userinfo.get();
   const email = userInfo.data.email || null;
+  const expectedEmail = EXPECTED_CALENDAR_EMAILS[staffName];
+  if (!expectedEmail || email?.toLowerCase() !== expectedEmail.toLowerCase()) {
+    throw new Error(`${staffName}は${expectedEmail}でGoogleにログインして連携してください（現在: ${email || "不明"}）`);
+  }
 
   const existing = await db.select().from(googleTokens).where(eq(googleTokens.staffName, staffName));
 
@@ -54,6 +76,9 @@ export async function handleCallback(code: string, staffName: string) {
       })
       .where(eq(googleTokens.staffName, staffName));
   } else {
+    if (!tokens.refresh_token) {
+      throw new Error("Googleから更新用トークンを取得できませんでした。アクセス許可を解除してから再度お試しください。");
+    }
     await db.insert(googleTokens).values({
       staffName,
       accessToken: tokens.access_token!,
@@ -71,6 +96,13 @@ async function getAuthenticatedClient(staffName: string) {
   if (tokenRows.length === 0) return null;
 
   const token = tokenRows[0];
+  const expectedEmail = EXPECTED_CALENDAR_EMAILS[staffName];
+  if (!expectedEmail) {
+    throw new Error(`${staffName}はGoogleカレンダー連携の対象外です`);
+  }
+  if (token.email?.toLowerCase() !== expectedEmail.toLowerCase()) {
+    throw new Error(`${staffName}の連携先が${expectedEmail}ではありません。管理画面から再連携してください。`);
+  }
   const oauth2Client = createOAuth2Client();
   oauth2Client.setCredentials({
     access_token: token.accessToken,
@@ -96,7 +128,8 @@ export async function createCalendarEvent(
   summary: string,
   description: string,
   meetingDate: string,
-  meetingUrl?: string
+  meetingUrl?: string,
+  leadId?: number
 ) {
   const auth = await getAuthenticatedClient(staffName);
   if (!auth) {
@@ -123,17 +156,48 @@ export async function createCalendarEvent(
       dateTime: endDateTime,
       timeZone: "Asia/Tokyo",
     },
+    reminders: {
+      useDefault: false,
+      overrides: [
+        { method: "popup", minutes: 30 },
+        { method: "popup", minutes: 1 },
+      ],
+    },
+    extendedProperties: leadId ? {
+      private: {
+        growthParkLeadId: String(leadId),
+      },
+    } : undefined,
   };
 
   if (meetingUrl) {
     event.location = meetingUrl;
   }
 
-  const response = await calendar.events.insert({
-    calendarId: "primary",
-    requestBody: event,
-  });
-  console.log(`Google Calendar: ${staffName}のカレンダーに予定を作成しました - ${summary}`);
+  let response;
+  if (leadId) {
+    const existing = await calendar.events.list({
+      calendarId: "primary",
+      privateExtendedProperty: [`growthParkLeadId=${leadId}`],
+      maxResults: 1,
+      singleEvents: true,
+    });
+    const existingEventId = existing.data.items?.[0]?.id;
+    if (existingEventId) {
+      response = await calendar.events.update({
+        calendarId: "primary",
+        eventId: existingEventId,
+        requestBody: event,
+      });
+    }
+  }
+  if (!response) {
+    response = await calendar.events.insert({
+      calendarId: "primary",
+      requestBody: event,
+    });
+  }
+  console.log(`Google Calendar: ${staffName}のカレンダーに予定を保存しました - ${summary}`);
   console.log(`Google Calendar: Event ID: ${response.data.id}, Link: ${response.data.htmlLink}`);
   console.log(`Google Calendar: Event status: ${response.data.status}, creator: ${response.data.creator?.email}, organizer: ${response.data.organizer?.email}`);
   return response.data;
