@@ -6,7 +6,7 @@ import { z } from "zod";
 // Enums
 export const userRoleEnum = pgEnum("user_role", ["AddBox", "Connector", "Supporter", "Client"]);
 export const leadStatusEnum = pgEnum("lead_status", ["進行中", "日程確定", "商談実施済み", "失注"]);
-export const assignedPersonEnum = pgEnum("assigned_person", ["森尾", "宮本", "林", "福嶋", "芝本", "棗", "浜野"]);
+export const assignedPersonEnum = pgEnum("assigned_person", ["森尾", "宮本", "林", "福嶋", "芝本", "棗", "浜野", "阿久津"]);
 export const meetingOutcomeEnum = pgEnum("meeting_outcome", ["予定", "実施済み", "キャンセル"]);
 export const supporterStatusEnum = pgEnum("supporter_status", ["アクティブ", "ストップ"]);
 export const contractCommissionEnum = pgEnum("contract_commission", ["一律80%", "一律70%", "3件まで70%で3件から80%", "5件まで70%で6件から80%"]);

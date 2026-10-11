@@ -16,6 +16,9 @@ import { ja } from "date-fns/locale";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+
+const INTERNAL_STAFF = ["森尾", "宮本", "林", "福嶋", "芝本", "棗", "浜野", "阿久津"];
+
 export default function LeadsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -61,6 +64,10 @@ export default function LeadsPage() {
   const [dealLinkInputs, setDealLinkInputs] = useState<{[key: number]: {contact: string, url: string}}>({});
   const { data: leads, isLoading } = useQuery({
     queryKey: ['/api/leads'],
+    enabled: !!user
+  });
+  const { data: supporters } = useQuery({
+    queryKey: ['/api/supporters'],
     enabled: !!user
   });
   const deleteMutation = useMutation({
@@ -254,7 +261,10 @@ export default function LeadsPage() {
                          (lead.status?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
                          (lead.meetingFee?.toString() || '').includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === "all" || lead.status === statusFilter;
-    const matchesStaff = staffFilter === "all" || lead.assignedPerson === staffFilter;
+    const isInternalStaffLead = !!lead.assignedPerson && INTERNAL_STAFF.includes(lead.assignedPerson);
+    const matchesStaff = staffFilter === "all" ||
+      (staffFilter === "internal" && isInternalStaffLead) ||
+      (staffFilter === "connector" && !isInternalStaffLead);
     const matchesSupporter = supporterFilter === "all" || lead.supporter?.companyName === supporterFilter;
     const matchesMonth = monthFilter === "all" || (() => {
       const targetDate = lead.meetingDate ? new Date(lead.meetingDate) : new Date(lead.createdAt);
@@ -303,12 +313,12 @@ export default function LeadsPage() {
     return matchesSearch && matchesStatus && matchesStaff && matchesSupporter && matchesMonth && matchesYear && matchesCreatedDateRange && matchesMeetingDateRange;
   }) || [];
   // AddBox経由とコネクター経由で商談を分ける
-  // 担当者が設定されている（森尾、宮本、林、福嶋、芝本、棗）場合はAddBox経由
+  // 社内担当者が設定されている場合はZETTAICHI経由
   const addBoxLeads = filteredLeads.filter((lead: any) => 
-    lead.assignedPerson && ['森尾', '宮本', '林', '福嶋', '芝本', '棗'].includes(lead.assignedPerson)
+    lead.assignedPerson && INTERNAL_STAFF.includes(lead.assignedPerson)
   );
   const connectorLeads = filteredLeads.filter((lead: any) => 
-    !lead.assignedPerson || !['森尾', '宮本', '林', '福嶋', '芝本', '棗'].includes(lead.assignedPerson)
+    !lead.assignedPerson || !INTERNAL_STAFF.includes(lead.assignedPerson)
   );
 
   // AddBox経由の売上計算（従来通りmeetingFeeで計算）
@@ -503,52 +513,12 @@ export default function LeadsPage() {
                 </Select>
               <Select value={staffFilter} onValueChange={setStaffFilter}>
                 <SelectTrigger className="w-40">
-                  <SelectValue placeholder="担当者" />
+                  <SelectValue placeholder="担当区分" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">担当者</SelectItem>
-                  <SelectItem value="森尾">
-                    <div className="flex items-center space-x-2">
-                      <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-                      <span>森尾</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="宮本">
-                    <div className="flex items-center space-x-2">
-                      <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
-                      <span>宮本</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="林">
-                    <div className="flex items-center space-x-2">
-                      <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                      <span>林</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="福嶋">
-                    <div className="flex items-center space-x-2">
-                      <div className="w-3 h-3 bg-purple-500 rounded-full"></div>
-                      <span>福嶋</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="芝本">
-                    <div className="flex items-center space-x-2">
-                      <div className="w-3 h-3 bg-orange-500 rounded-full"></div>
-                      <span>芝本</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="棗">
-                    <div className="flex items-center space-x-2">
-                      <div className="w-3 h-3 bg-pink-500 rounded-full"></div>
-                      <span>棗</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="浜野">
-                    <div className="flex items-center space-x-2">
-                      <div className="w-3 h-3 bg-teal-500 rounded-full"></div>
-                      <span>浜野</span>
-                    </div>
-                  </SelectItem>
+                  <SelectItem value="all">すべての担当区分</SelectItem>
+                  <SelectItem value="internal">繋いだ担当者</SelectItem>
+                  <SelectItem value="connector">コネクター</SelectItem>
                 </SelectContent>
               </Select>
                 <Select value={supporterFilter} onValueChange={setSupporterFilter}>
@@ -557,9 +527,11 @@ export default function LeadsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">支援先</SelectItem>
-                    {Array.from(new Set(leads?.map((lead: any) => lead.supporter?.companyName).filter(Boolean))).map((supporterName: string) => (
-                      <SelectItem key={supporterName} value={supporterName}>
-                        {supporterName}
+                    {((supporters as any[]) || [])
+                      .filter((supporter: any) => supporter.status === "アクティブ")
+                      .map((supporter: any) => (
+                      <SelectItem key={supporter.id} value={supporter.companyName}>
+                        {supporter.companyName}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -675,6 +647,7 @@ export default function LeadsPage() {
                                   lead.assignedPerson === "芝本" ? "bg-orange-100 text-orange-800 border border-orange-300" :
                                   lead.assignedPerson === "棗" ? "bg-pink-100 text-pink-800 border border-pink-300" :
                                   lead.assignedPerson === "浜野" ? "bg-teal-100 text-teal-800 border border-teal-300" :
+                                  lead.assignedPerson === "阿久津" ? "bg-indigo-100 text-indigo-800 border border-indigo-300" :
                                   "bg-gray-100 text-gray-800 border border-gray-300"
                                 }`}>
                                   {lead.assignedPerson}
@@ -900,6 +873,7 @@ export default function LeadsPage() {
                                   lead.assignedPerson === "芝本" ? "bg-orange-100 text-orange-800 border border-orange-300" :
                                   lead.assignedPerson === "棗" ? "bg-pink-100 text-pink-800 border border-pink-300" :
                                   lead.assignedPerson === "浜野" ? "bg-teal-100 text-teal-800 border border-teal-300" :
+                                  lead.assignedPerson === "阿久津" ? "bg-indigo-100 text-indigo-800 border border-indigo-300" :
                                   "bg-gray-100 text-gray-800 border border-gray-300"
                                 }`}>
                                   {lead.assignedPerson}

@@ -565,6 +565,12 @@ export function LeadForm({ onSuccess, leadId, readOnly = false, connectorId }: L
                         <span>浜野</span>
                       </div>
                     </SelectItem>
+                    <SelectItem value="阿久津">
+                      <div className="flex items-center space-x-2">
+                        <div className="w-3 h-3 bg-indigo-500 rounded-full"></div>
+                        <span>阿久津</span>
+                      </div>
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               )}
@@ -614,6 +620,12 @@ export function LeadForm({ onSuccess, leadId, readOnly = false, connectorId }: L
                       <div className="flex items-center space-x-2">
                         <div className="w-3 h-3 bg-teal-500 rounded-full"></div>
                         <span>浜野</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="阿久津">
+                      <div className="flex items-center space-x-2">
+                        <div className="w-3 h-3 bg-indigo-500 rounded-full"></div>
+                        <span>阿久津</span>
                       </div>
                     </SelectItem>
                   </SelectContent>
