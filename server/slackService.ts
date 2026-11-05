@@ -1,14 +1,24 @@
-import { type ChatPostMessageArguments, WebClient } from "@slack/web-api";
+import { type ChatPostMessageArguments, type Logger, LogLevel, WebClient } from "@slack/web-api";
 
-if (!process.env.SLACK_BOT_TOKEN) {
-  throw new Error("SLACK_BOT_TOKEN environment variable must be set");
+// SDK logs can include server response or request contents. Log only sanitized
+// failure codes in this module instead.
+const sdkLogger: Logger = {
+  debug() {}, info() {}, warn() {}, error() {}, setLevel() {}, setName() {},
+  getLevel: () => LogLevel.ERROR,
+};
+
+function logSlackFailure(event: string, error: unknown): void {
+  const knownCodes = new Set([
+    "invalid_auth", "channel_not_found", "not_in_channel", "missing_scope",
+    "account_inactive", "token_revoked", "ratelimited", "request_timeout",
+    "slack_webapi_platform_error", "slack_webapi_request_error", "slack_webapi_rate_limited_error",
+  ]);
+  const failure = error as { code?: unknown; data?: { error?: unknown } } | undefined;
+  const candidate = failure?.data?.error || failure?.code;
+  const code = typeof candidate === "string" && knownCodes.has(candidate) ? candidate : "notification_failed";
+  // Do not log the SDK error object: it may contain tokens or message contents.
+  console.error(`Slack ${event} failed: ${code}`);
 }
-
-if (!process.env.SLACK_CHANNEL_ID) {
-  throw new Error("SLACK_CHANNEL_ID environment variable must be set");
-}
-
-const slack = new WebClient(process.env.SLACK_BOT_TOKEN);
 
 // 内部スタッフの役職マッピング
 const staffPositions: Record<string, string> = {
@@ -27,10 +37,14 @@ async function sendSlackMessage(
   message: ChatPostMessageArguments
 ): Promise<string | undefined> {
   try {
-    const response = await slack.chat.postMessage(message);
+    // Legacy events remain optional and never use the lead-only destination.
+    const token = process.env.SLACK_BOT_TOKEN;
+    if (!token || !process.env.SLACK_CHANNEL_ID) return undefined;
+    const legacySlack = new WebClient(token, { logger: sdkLogger });
+    const response = await legacySlack.chat.postMessage(message);
     return response.ts;
   } catch (error) {
-    console.error('Error sending Slack message:', error);
+    logSlackFailure('legacy notification', error);
     throw error;
   }
 }
@@ -52,7 +66,7 @@ export async function notifyNewConnectorRegistration(userData: {
       notificationText += `\n*会社名:* ${userData.companyName}`;
     }
     
-    await sendSlackMessage({
+    const sent = await sendSlackMessage({
       channel,
       text: '🎉 新規コネクター登録',
       blocks: [
@@ -84,9 +98,9 @@ export async function notifyNewConnectorRegistration(userData: {
       ]
     });
     
-    console.log('Slack notification sent for new connector registration');
+    if (sent) console.log('Slack notification sent for new connector registration');
   } catch (error) {
-    console.error('Failed to send Slack notification for new connector registration:', error);
+    logSlackFailure('connector registration', error);
   }
 }
 
@@ -94,61 +108,54 @@ export async function notifyNewConnectorRegistration(userData: {
  * 新規商談登録通知をSlackに送信
  */
 export async function notifyNewLeadRegistration(leadData: {
+  leadId: number;
   connectorName: string;
   companyName: string;
-  companyWebsite: string;
-  businessContent: string;
-  contactPerson: string;
-  position: string;
   supporterCompanyName: string;
-  meetingFee: number;
-  needs: string;
   assignedPerson: string;
 }): Promise<void> {
+  const token = process.env.SLACK_LEAD_BOT_TOKEN;
+  const channel = process.env.SLACK_LEAD_CHANNEL_ID;
+  // Fail closed: no fallback to the previous workspace or its channel.
+  if (!token || !channel) {
+    console.warn("Slack lead notification skipped: dedicated destination is not configured");
+    return;
+  }
   try {
-    const channel = process.env.SLACK_CHANNEL_ID!;
-    
-    // 担当者の役職を取得
-    const assignedPersonPosition = staffPositions[leadData.assignedPerson];
-    const assignedPersonText = assignedPersonPosition 
-      ? `役職: ${assignedPersonPosition}\n${leadData.assignedPerson}`
-      : leadData.assignedPerson;
-    
-    await sendSlackMessage({
-      channel,
-      text: '💼 新規商談登録',
-      blocks: [
-        {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: '<!channel> 新規商談登録がありました'
-          }
-        },
-        {
-          type: 'header',
-          text: {
-            type: 'plain_text',
-            text: '💼 新規商談登録',
-            emoji: true
-          }
-        },
-        {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: `*コネクター:* ${leadData.connectorName}\n*企業名:* ${leadData.companyName}\n*HP:* ${leadData.companyWebsite || '未記入'}\n*担当者:* ${leadData.contactPerson}\n*役職:* ${leadData.position || '未記入'}\n*事業内容:* ${leadData.businessContent}\n*ニーズ:* ${leadData.needs}\n*支援先:* ${leadData.supporterCompanyName}\n*商談フィー:* ¥${leadData.meetingFee.toLocaleString()}\n*ZETTAICHI担当者:*\n${assignedPersonText}`
-          }
-        },
-        {
-          type: 'divider'
-        }
-      ]
+    // Plain-text blocks prevent names or company input from becoming mentions/links.
+    const field = (label: string, value: string) => ({
+      type: "plain_text" as const,
+      text: `${label}: ${value || "未設定"}`.slice(0, 1900),
+      emoji: false,
     });
-    
-    console.log('Slack notification sent for new lead registration');
+    const slack = new WebClient(token, {
+      logger: sdkLogger,
+      retryConfig: { retries: 0 },
+      rejectRateLimitedCalls: true,
+      timeout: 10000,
+    });
+    await slack.chat.postMessage({
+      channel,
+      text: "新規商談が登録されました",
+      parse: "none",
+      unfurl_links: false,
+      unfurl_media: false,
+      blocks: [
+        { type: "header", text: { type: "plain_text", text: "新規商談登録", emoji: false } },
+        { type: "section", fields: [
+          field("企業名", leadData.companyName),
+          field("紹介者", leadData.connectorName),
+          field("ZETTAICHI担当者", leadData.assignedPerson),
+          field("支援先", leadData.supporterCompanyName),
+        ] },
+        { type: "context", elements: [{ type: "plain_text", text: `商談ID: ${leadData.leadId}`, emoji: false }] },
+        { type: "section", text: { type: "mrkdwn", text: "<https://growth-park.onrender.com/leads|商談管理を開く>" } },
+      ],
+    });
+    console.log("Slack lead notification sent");
   } catch (error) {
-    console.error('Failed to send Slack notification for new lead registration:', error);
+    // A notification failure must not roll back a successfully registered lead.
+    logSlackFailure("lead registration", error);
   }
 }
 
@@ -227,7 +234,7 @@ export async function notifyMeetingReport(reportData: {
       ]
     });
   } catch (error) {
-    console.error('Error sending Slack message for meeting report:', error);
+    logSlackFailure('meeting report', error);
   }
 }
 
