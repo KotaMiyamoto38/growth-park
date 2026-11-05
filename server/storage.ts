@@ -28,6 +28,7 @@ import {
   type InsertPasswordResetToken
 } from "@shared/schema";
 import { db } from "./db";
+import { deleteAccount } from "./accountDeletion";
 import { eq, and, gte, lte, lt, desc, asc, or, isNotNull, sql } from "drizzle-orm";
 
 export interface IStorage {
@@ -168,7 +169,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteUser(id: number): Promise<void> {
-    await db.delete(users).where(eq(users.id, id));
+    await deleteAccount(db, id);
+    connectorRanks.delete(id);
   }
 
   async getConnectorCompany(id: number): Promise<ConnectorCompany | undefined> {

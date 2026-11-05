@@ -1,6 +1,7 @@
 import express, { type Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { AccountDeletionConflictError } from "./accountDeletion";
 import { upload } from "./fileHandler";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
@@ -115,6 +116,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.deleteUser(userId);
       res.json({ message: "アカウントが正常に削除されました" });
     } catch (error) {
+      if (error instanceof AccountDeletionConflictError) {
+        return res.status(409).json({ message: error.message });
+      }
       console.error("Account deletion error:", error);
       res.status(500).json({ message: "アカウント削除に失敗しました" });
     }
@@ -683,6 +687,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Get admin connector detail error:", error);
       res.status(500).json({ message: "コネクター詳細の取得に失敗しました" });
+    }
+  });
+
+  // Only an existing administrator may promote an existing company account.
+  app.post("/api/admin/connectors/:connectorId/promote", authenticateToken, requireRole(["AddBox"]), async (req, res) => {
+    try {
+      const connectorId = Number(req.params.connectorId);
+      if (!Number.isSafeInteger(connectorId) || connectorId <= 0 || req.body?.confirm !== true) {
+        return res.status(400).json({ message: "対象アカウントと管理者への変更を確認してください" });
+      }
+      const connector = await storage.getUser(connectorId);
+      if (!connector) {
+        return res.status(404).json({ message: "アカウントが見つかりません" });
+      }
+      if (!/^[^\s@]+@zettaichi\.co\.jp$/i.test(connector.email)) {
+        return res.status(403).json({ message: "@zettaichi.co.jpのアカウントのみ管理者へ変更できます" });
+      }
+      if (connector.role !== "Connector" && connector.role !== "AddBox") {
+        return res.status(409).json({ message: "コネクターのアカウントのみ変更できます" });
+      }
+      const updated = connector.role === "AddBox"
+        ? connector
+        : await storage.updateUser(connectorId, { role: "AddBox" });
+      res.json({ id: updated.id, name: updated.name, email: updated.email, role: updated.role });
+    } catch (error) {
+      console.error("Promote connector error:", error);
+      res.status(500).json({ message: "管理者への変更に失敗しました" });
     }
   });
 
