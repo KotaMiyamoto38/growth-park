@@ -9,7 +9,7 @@ import { insertUserSchema, insertConnectorCompanySchema, insertSupporterSchema, 
 import { z } from "zod";
 import path from "path";
 import fs from "fs";
-import { notifyNewConnectorRegistration, notifyNewLeadRegistration, notifyMeetingReport } from "./slackService";
+import { notifyNewConnectorRegistration, notifyNewLeadRegistration, notifyMeetingReport, sendSlackLeadTestNotification, SlackLeadNotConfiguredError } from "./slackService";
 import { getAuthUrl, handleCallback, createCalendarEvent, getConnectedStaff, disconnectStaff, listCalendarEvents } from "./googleCalendarService";
 
 const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
@@ -658,6 +658,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Delete supporter error:", error);
       res.status(500).json({ message: "支援先の削除に失敗しました" });
+    }
+  });
+
+  // Send only a fixed connection-test message; never create a lead or accept a destination.
+  app.post("/api/admin/slack/test", authenticateToken, requireRole(["AddBox"]), async (_req, res) => {
+    try {
+      await sendSlackLeadTestNotification();
+      res.json({ message: "Slackにテスト通知を送信しました。通知チャンネルをご確認ください。" });
+    } catch (error) {
+      if (error instanceof SlackLeadNotConfiguredError) {
+        return res.status(503).json({ message: "Slack通知の接続設定が完了していません。" });
+      }
+      // Never expose an SDK error or its request/credential contents.
+      res.status(502).json({ message: "Slackへのテスト通知に失敗しました。接続設定とチャンネルへのアプリ追加をご確認ください。" });
     }
   });
 

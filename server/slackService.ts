@@ -104,6 +104,43 @@ export async function notifyNewConnectorRegistration(userData: {
   }
 }
 
+export class SlackLeadNotConfiguredError extends Error {
+  constructor() {
+    super("Slack lead notification destination is not configured");
+    this.name = "SlackLeadNotConfiguredError";
+  }
+}
+
+// Production lead alerts and the administrator connection test share this path.
+type LeadChannelMessage = Pick<Extract<ChatPostMessageArguments, { blocks: unknown }>, "text" | "blocks">;
+async function postLeadChannelMessage(message: LeadChannelMessage): Promise<void> {
+  const token = process.env.SLACK_LEAD_BOT_TOKEN;
+  const channel = process.env.SLACK_LEAD_CHANNEL_ID;
+  // Fail closed: no fallback to the previous workspace or its channel.
+  if (!token || !channel) throw new SlackLeadNotConfiguredError();
+  const slack = new WebClient(token, {
+    logger: sdkLogger,
+    retryConfig: { retries: 0 },
+    rejectRateLimitedCalls: true,
+    timeout: 10000,
+  });
+  await slack.chat.postMessage({
+    ...message,
+    channel,
+    parse: "none",
+    unfurl_links: false,
+    unfurl_media: false,
+  });
+}
+
+export async function sendSlackLeadTestNotification(): Promise<void> {
+  const text = "【接続テスト】Growth ParkからのSlack通知です。新規商談は登録していません。";
+  await postLeadChannelMessage({
+    text,
+    blocks: [{ type: "section", text: { type: "plain_text", text, emoji: false } }],
+  });
+}
+
 /**
  * 新規商談登録通知をSlackに送信
  */
@@ -114,13 +151,6 @@ export async function notifyNewLeadRegistration(leadData: {
   supporterCompanyName: string;
   assignedPerson: string;
 }): Promise<void> {
-  const token = process.env.SLACK_LEAD_BOT_TOKEN;
-  const channel = process.env.SLACK_LEAD_CHANNEL_ID;
-  // Fail closed: no fallback to the previous workspace or its channel.
-  if (!token || !channel) {
-    console.warn("Slack lead notification skipped: dedicated destination is not configured");
-    return;
-  }
   try {
     // Plain-text blocks prevent names or company input from becoming mentions/links.
     const field = (label: string, value: string) => ({
@@ -128,18 +158,8 @@ export async function notifyNewLeadRegistration(leadData: {
       text: `${label}: ${value || "未設定"}`.slice(0, 1900),
       emoji: false,
     });
-    const slack = new WebClient(token, {
-      logger: sdkLogger,
-      retryConfig: { retries: 0 },
-      rejectRateLimitedCalls: true,
-      timeout: 10000,
-    });
-    await slack.chat.postMessage({
-      channel,
+    await postLeadChannelMessage({
       text: "新規商談が登録されました",
-      parse: "none",
-      unfurl_links: false,
-      unfurl_media: false,
       blocks: [
         { type: "header", text: { type: "plain_text", text: "新規商談登録", emoji: false } },
         { type: "section", fields: [
@@ -155,7 +175,11 @@ export async function notifyNewLeadRegistration(leadData: {
     console.log("Slack lead notification sent");
   } catch (error) {
     // A notification failure must not roll back a successfully registered lead.
-    logSlackFailure("lead registration", error);
+    if (error instanceof SlackLeadNotConfiguredError) {
+      console.warn("Slack lead notification skipped: dedicated destination is not configured");
+    } else {
+      logSlackFailure("lead registration", error);
+    }
   }
 }
 
