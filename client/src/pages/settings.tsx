@@ -98,6 +98,24 @@ export default function SettingsPage() {
     },
   });
 
+  const slackTestMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/admin/slack/test");
+      return response.json();
+    },
+    onSuccess: (result: { message: string }) => {
+      toast({ title: "テスト通知を送信しました", description: result.message });
+    },
+    onError: (error: Error) => {
+      let description = "テスト通知を送信できませんでした。時間をおいて再度お試しください。";
+      try {
+        const result = JSON.parse(error.message.replace(/^\d+:\s*/, ""));
+        if (typeof result.message === "string") description = result.message;
+      } catch {}
+      toast({ title: "Slack通知エラー", description, variant: "destructive" });
+    },
+  });
+
   // Load settings from localStorage
   useEffect(() => {
     const savedNotifications = localStorage.getItem("growth_park_notifications");
@@ -264,6 +282,21 @@ export default function SettingsPage() {
 
           {/* 通知設定 */}
           <TabsContent value="notifications" className="space-y-6">
+            {user?.role === "AddBox" && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Slack通知の接続確認</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <p className="text-sm text-muted-foreground">
+                    設定済みのSlackチャンネルへテスト通知を送信します。商談データは作成されません。
+                  </p>
+                  <Button onClick={() => slackTestMutation.mutate()} disabled={slackTestMutation.isPending}>
+                    {slackTestMutation.isPending ? "送信中…" : "Slackにテスト通知を送信"}
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
             <Card>
               <CardHeader>
                 <CardTitle>通知設定</CardTitle>
