@@ -23,7 +23,7 @@ const CALENDAR_STAFF = [
   { name: "宮本", email: "k.miyamoto@zettaichi.co.jp" },
   { name: "浜野", email: "o.hamano@zettaichi.co.jp" },
   { name: "芝本", email: "w.shibamoto@zettaichi.co.jp" },
-  { name: "阿久津", email: "y.akutsu@zettaichi.co.jp" },
+  { name: "阿久津", email: "h.akutsu@zettaichi.co.jp" },
 ] as const;
 
 export default function AdminPage() {

@@ -89,7 +89,10 @@ export default function SettingsPage() {
     onError: (error: any) => {
       toast({
         title: "削除エラー",
-        description: error.message || "アカウントの削除に失敗しました。",
+        description: (() => {
+          try { return JSON.parse(error.message.replace(/^\d+:\s*/, "")).message; }
+          catch { return "アカウントの削除に失敗しました。"; }
+        })(),
         variant: "destructive",
       });
     },
@@ -505,7 +508,7 @@ export default function SettingsPage() {
                 <div className="space-y-2">
                   <Label className="text-destructive">アカウント削除</Label>
                   <p className="text-sm text-muted-foreground">
-                    アカウントを削除すると、すべてのデータが完全に削除されます。この操作は取り消すことができません。
+                    アカウントとパスワード再設定情報を削除します。商談・報告書・担当契約がある場合は削除できません。管理者への変更をご希望の場合は、管理者にご依頼ください。
                   </p>
                 </div>
                 <AlertDialog>
@@ -522,7 +525,7 @@ export default function SettingsPage() {
                       </AlertDialogTitle>
                       <AlertDialogDescription>
                         本当にアカウントを削除しますか？この操作は取り消すことができません。
-                        すべてのデータが完全に削除され、ログインできなくなります。
+                        アカウントを削除するとログインできなくなります。企業情報や共有の業務データは削除されません。
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>

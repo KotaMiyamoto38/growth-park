@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -6,22 +6,41 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Header } from "@/components/layout/header";
 import { User, Building, Calendar, Mail, Phone } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { Button } from "@/components/ui/button";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import type { User as Account } from "@shared/schema";
 
 export default function AdminConnectorDetailPage() {
   const { connectorId } = useParams();
   const { user } = useAuth();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const promoteMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", `/api/admin/connectors/${connectorId}/promote`, { confirm: true });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/admin/connectors/${connectorId}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/connectors"] });
+      toast({ title: "ZETTAICHI管理者へ変更しました", description: "商談データとログイン情報は引き継がれています。ご本人は再ログインしてください。" });
+    },
+    onError: () => toast({ title: "変更できませんでした", description: "対象のメールアドレスと権限を確認してください。", variant: "destructive" }),
+  });
 
-  const { data: connector, isLoading: connectorLoading } = useQuery({
+  const { data: connector, isLoading: connectorLoading } = useQuery<Account>({
     queryKey: [`/api/admin/connectors/${connectorId}`],
     enabled: user?.role === "AddBox" && !!connectorId,
   });
 
-  const { data: leads, isLoading: leadsLoading } = useQuery({
+  const { data: leads, isLoading: leadsLoading } = useQuery<any[]>({
     queryKey: [`/api/connectors/${connectorId}/leads`],
     enabled: user?.role === "AddBox" && !!connectorId,
   });
 
-  const { data: meetings, isLoading: meetingsLoading } = useQuery({
+  const { data: meetings, isLoading: meetingsLoading } = useQuery<any[]>({
     queryKey: [`/api/connectors/${connectorId}/meetings`],
     enabled: user?.role === "AddBox" && !!connectorId,
   });
@@ -67,6 +86,28 @@ export default function AdminConnectorDetailPage() {
             </CardTitle>
           </CardHeader>
           <CardContent>
+            <div className="mb-4 flex flex-wrap items-center gap-3">
+              <Badge>{connector?.role === "AddBox" ? "ZETTAICHI管理者" : "コネクター"}</Badge>
+              {connector?.role === "Connector" && /^[^\s@]+@zettaichi\.co\.jp$/i.test(connector.email) && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild><Button disabled={promoteMutation.isPending}>ZETTAICHI管理者へ変更</Button></AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>ZETTAICHI管理者への変更</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {connector.name}（{connector.email}）を管理者へ変更します。
+                        全体の商談・コネクター情報などにアクセスできるようになります。
+                        既存の商談データとパスワードは維持され、再登録は不要です。
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>キャンセル</AlertDialogCancel>
+                      <AlertDialogAction disabled={promoteMutation.isPending} onClick={() => promoteMutation.mutate()}>管理者へ変更する</AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
