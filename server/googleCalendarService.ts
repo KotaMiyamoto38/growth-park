@@ -19,7 +19,7 @@ export const EXPECTED_CALENDAR_EMAILS: Record<string, string> = {
   "宮本": "k.miyamoto@zettaichi.co.jp",
   "浜野": "o.hamano@zettaichi.co.jp",
   "芝本": "w.shibamoto@zettaichi.co.jp",
-  "阿久津": "y.akutsu@zettaichi.co.jp",
+  "阿久津": "h.akutsu@zettaichi.co.jp",
 };
 
 function createOAuth2Client() {

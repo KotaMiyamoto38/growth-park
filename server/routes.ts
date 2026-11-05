@@ -123,7 +123,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Authentication routes
   app.post("/api/auth/register", async (req, res) => {
     try {
-      console.log("Registration request body:", req.body);
       const { email, password, name, role, companyName, companyWebsite, industry, address } = req.body;
       console.log("Extracted fields:", { email, password: "***", name, role, companyName, companyWebsite, industry, address });
       
@@ -137,8 +136,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           "w.shibamoto@addbox.co.jp"
         ];
         
-        if (!allowedEmails.includes(email)) {
-          return res.status(403).json({ message: "権限がありません" });
+        if (!allowedEmails.includes(email) && !(typeof email === "string" && /^[^\s@]+@zettaichi\.co\.jp$/i.test(email))) {
+          return res.status(403).json({ message: "ZETTAICHI管理者は@zettaichi.co.jpのメールアドレスで登録してください" });
         }
       }
       
