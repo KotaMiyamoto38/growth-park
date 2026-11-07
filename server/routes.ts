@@ -11,6 +11,7 @@ import path from "path";
 import fs from "fs";
 import { notifyNewConnectorRegistration, notifyNewLeadRegistration, notifyMeetingReport, sendSlackLeadTestNotification, SlackLeadNotConfiguredError } from "./slackService";
 import { getAuthUrl, handleCallback, createCalendarEvent, getConnectedStaff, disconnectStaff, listCalendarEvents } from "./googleCalendarService";
+import { registerSheetRoutes } from "./sheetRoutes";
 
 const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key";
 
@@ -47,6 +48,7 @@ const requireRole = (roles: string[]) => {
 };
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  registerSheetRoutes(app, authenticateToken, requireRole);
 
   // Health check endpoint (used for keep-alive on Render free tier)
   app.get('/api/health', (_req, res) => {

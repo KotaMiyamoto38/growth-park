@@ -10,20 +10,30 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSepa
 import { Header } from "@/components/layout/header";
 import { LeadForm } from "@/components/leads/lead-form";
 import { MeetingReportForm } from "@/components/meeting-reports/meeting-report-form";
-import { Plus, Search, Edit, Trash2, Download, Eye, Copy, FileText, CalendarPlus, Check } from "lucide-react";
+import { Plus, Search, Edit, Trash2, Download, Eye, Copy, FileText, FileSpreadsheet, Loader2, CalendarPlus, Check } from "lucide-react";
 import { format } from "date-fns";
 import { ja } from "date-fns/locale";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { ToastAction } from "@/components/ui/toast";
 
 const FILTERABLE_STAFF = ["宮本", "浜野", "芝本", "阿久津"] as const;
 const INTERNAL_STAFF = ["森尾", "宮本", "林", "福嶋", "芝本", "棗", "浜野", "阿久津"];
+
+interface SheetExportResult {
+  alreadyExported: boolean;
+  spreadsheetUrl: string;
+  rowNumber: number;
+  supporterName: string;
+  message?: string;
+}
 
 export default function LeadsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const scrollPositionRef = useRef<number>(0);
+  const sheetExportInFlight = useRef(false);
 
   const toJSTDateTimeLocal = (dateStr: string) => {
     const d = new Date(dateStr);
@@ -92,6 +102,37 @@ export default function LeadsPage() {
         description: "商談の削除に失敗しました",
         variant: "destructive",
       });
+    },
+  });
+  const sheetExportMutation = useMutation({
+    mutationFn: async (leadId: number): Promise<SheetExportResult> => {
+      const response = await apiRequest("POST", `/api/leads/${leadId}/export-to-sheet`);
+      return response.json();
+    },
+    retry: false,
+    onSuccess: (result) => {
+      // Keep the destination link limited to the two supported workbooks.
+      const safeUrl = /^https:\/\/docs\.google\.com\/spreadsheets\/d\/(1S7b3VpcujbNtQEzWcj9u5Fxnu3bvWuSJqPuhrDNBZnw|1fNfdNsBikcxXiFKa88Fef6B1CgPyRN3I56kJHEP2Ros)\//.test(result.spreadsheetUrl);
+      toast({
+        title: result.alreadyExported ? "転記済みです" : "転記しました",
+        description: `${result.supporterName}のシート ${result.rowNumber}行目${result.alreadyExported ? "に転記済みです。重複した行は追加していません。" : "に追記しました。"}`,
+        action: safeUrl ? (
+          <ToastAction altText="転記先のスプレッドシートを開く" asChild>
+            <a href={result.spreadsheetUrl} target="_blank" rel="noopener noreferrer">シートを開く</a>
+          </ToastAction>
+        ) : undefined,
+      });
+    },
+    onError: (error: Error) => {
+      let description = "シートへの転記に失敗しました。時間をおいて再度お試しください。";
+      try {
+        const result = JSON.parse(error.message.replace(/^\d+:\s*/, ""));
+        if (typeof result.message === "string") description = result.message;
+      } catch {}
+      toast({ title: "スプレッドシート転記", description, variant: "destructive" });
+    },
+    onSettled: () => {
+      sheetExportInFlight.current = false;
     },
   });
   const statusUpdateMutation = useMutation({
@@ -184,6 +225,23 @@ export default function LeadsPage() {
     if (confirm("この商談を削除してもよろしいですか？")) {
       deleteMutation.mutate(leadId);
     }
+  };
+  const handleSheetExport = (lead: { id: number; meetingDate?: string | null }) => {
+    if (sheetExportInFlight.current) return;
+    const savedDate = lead.meetingDate ? toJSTDateTimeLocal(lead.meetingDate) : "";
+    if (
+      (meetingDateInputs[lead.id] !== undefined && meetingDateInputs[lead.id] !== savedDate) ||
+      statusUpdateMutation.isPending || addToCalendarMutation.isPending
+    ) {
+      toast({
+        title: "商談日時を確認してください",
+        description: "商談日時を保存してから転記してください",
+        variant: "destructive",
+      });
+      return;
+    }
+    sheetExportInFlight.current = true;
+    sheetExportMutation.mutate(lead.id);
   };
   const handleStatusChange = (leadId: number, status: string) => {
     statusUpdateMutation.mutate({ leadId, status });
@@ -831,6 +889,23 @@ export default function LeadsPage() {
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
+                              {user?.role === "AddBox" && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleSheetExport(lead)}
+                                  disabled={sheetExportMutation.isPending}
+                                  title="スプレッドシートに転記"
+                                  aria-label="スプレッドシートに転記"
+                                  className="text-green-700 hover:text-green-800"
+                                >
+                                  {sheetExportMutation.isPending && sheetExportMutation.variables === lead.id ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <FileSpreadsheet className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              )}
                             </div>
                           </TableCell>
                         </TableRow>

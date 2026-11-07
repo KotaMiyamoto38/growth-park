@@ -25,9 +25,10 @@ import {
   Eye,
   EyeOff,
   Trash2,
-  AlertTriangle
+  AlertTriangle,
+  FileSpreadsheet
 } from "lucide-react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import {
   AlertDialog,
@@ -41,10 +42,28 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
+interface GoogleSheetsStatus {
+  connected: boolean;
+  ready: boolean;
+  email?: string;
+  message?: string;
+}
+
 export default function SettingsPage() {
   const { user, logout } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const {
+    data: googleSheetsStatus,
+    isLoading: googleSheetsStatusLoading,
+    isError: googleSheetsStatusError,
+    refetch: refetchGoogleSheetsStatus,
+  } = useQuery<GoogleSheetsStatus>({
+    queryKey: ["/api/admin/google-sheets/status"],
+    enabled: user?.role === "AddBox",
+    staleTime: 0,
+    retry: false,
+  });
   const [showPassword, setShowPassword] = useState(false);
   const [notifications, setNotifications] = useState({
     email: true,
@@ -115,6 +134,57 @@ export default function SettingsPage() {
       toast({ title: "Slack通知エラー", description, variant: "destructive" });
     },
   });
+
+  const googleSheetsConnectMutation = useMutation({
+    mutationFn: async (): Promise<{ url: string }> => {
+      const response = await apiRequest("POST", "/api/admin/google-sheets/connect");
+      return response.json();
+    },
+    retry: false,
+    onSuccess: ({ url }) => {
+      try {
+        const destination = new URL(url);
+        if (destination.protocol !== "https:" || destination.hostname !== "accounts.google.com") {
+          throw new Error("Unexpected authorization destination");
+        }
+        window.location.assign(destination.toString());
+      } catch {
+        toast({
+          title: "Google連携エラー",
+          description: "Googleの連携画面を開けませんでした。再度お試しください。",
+          variant: "destructive",
+        });
+      }
+    },
+    onError: (error: Error) => {
+      let description = "Googleとの連携を開始できませんでした。再度お試しください。";
+      try {
+        const result = JSON.parse(error.message.replace(/^\d+:\s*/, ""));
+        if (typeof result.message === "string") description = result.message;
+      } catch {}
+      toast({ title: "Google連携エラー", description, variant: "destructive" });
+    },
+  });
+
+  useEffect(() => {
+    if (user?.role !== "AddBox") return;
+    const url = new URL(window.location.href);
+    const outcome = url.searchParams.get("googleSheets");
+    if (!outcome) return;
+    if (outcome === "connected") {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/google-sheets/status"] });
+      toast({ title: "Googleスプレッドシートを連携しました", description: "転記先への接続を確認しました。転記には両方のシートの編集権限が必要です。" });
+    } else {
+      toast({
+        title: "Google連携を完了できませんでした",
+        description: "対象の2枚のシートを編集できるGoogleアカウントで、もう一度連携してください。",
+        variant: "destructive",
+      });
+    }
+    url.searchParams.delete("googleSheets");
+    url.searchParams.delete("error");
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  }, [user?.role, queryClient, toast]);
 
   // Load settings from localStorage
   useEffect(() => {
@@ -209,6 +279,54 @@ export default function SettingsPage() {
       />
 
       <div className="px-6 space-y-6">
+        {user?.role === "AddBox" && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileSpreadsheet className="h-5 w-5" />
+                Googleスプレッドシート連携
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                商談管理の転記ボタンから、支援先ごとのシートに追記します。対象の2枚のシートを編集できるGoogleアカウントで連携してください。
+              </p>
+              <ul className="list-disc pl-5 text-sm space-y-1">
+                <li>株式会社Think UP：14行目以降に追記（役職欄は変更しません）</li>
+                <li>Acroforce株式会社：4行目以降に追記</li>
+              </ul>
+              <div className="text-sm" role="status">
+                {googleSheetsStatusLoading ? (
+                  <p>連携状態を確認しています…</p>
+                ) : googleSheetsStatusError ? (
+                  <p className="text-destructive">連携状態を取得できませんでした。</p>
+                ) : googleSheetsStatus?.connected ? (
+                  <>
+                    <p className={googleSheetsStatus.ready ? "text-green-700" : "text-amber-700"}>
+                      {googleSheetsStatus.ready ? "転記先への接続を確認済み" : "連携の確認が必要です"}
+                      {googleSheetsStatus.email ? `：${googleSheetsStatus.email}` : ""}
+                    </p>
+                    {googleSheetsStatus.ready && <p className="mt-1">転記には両方のシートの編集権限が必要です。</p>}
+                    {googleSheetsStatus.message && <p className="mt-1">{googleSheetsStatus.message}</p>}
+                  </>
+                ) : (
+                  <p>未連携です。最初にGoogleアカウントを連携してください。</p>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  onClick={() => googleSheetsConnectMutation.mutate()}
+                  disabled={googleSheetsConnectMutation.isPending || googleSheetsStatusLoading}
+                >
+                  {googleSheetsConnectMutation.isPending ? "Googleの連携画面を開いています…" : googleSheetsStatus?.connected ? "Googleアカウントを再連携" : "Googleアカウントを連携"}
+                </Button>
+                {googleSheetsStatusError && (
+                  <Button variant="outline" onClick={() => refetchGoogleSheetsStatus()}>状態を再確認</Button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
         <Tabs defaultValue="profile" className="space-y-6">
           <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="profile" className="flex items-center gap-2">

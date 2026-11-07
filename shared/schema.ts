@@ -1,5 +1,5 @@
-import { pgTable, text, serial, integer, boolean, timestamp, decimal, pgEnum, varchar, date } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { pgTable, text, serial, integer, boolean, timestamp, decimal, pgEnum, varchar, date, jsonb, primaryKey, unique, check } from "drizzle-orm/pg-core";
+import { relations, sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -159,6 +159,34 @@ export const googleTokens = pgTable("google_tokens", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+// Dedicated Sheets connection: kept separate from individual calendar permissions.
+export const googleSheetConnection = pgTable("google_sheet_connection", {
+  id: integer("id").primaryKey(),
+  email: text("email").notNull(),
+  accessToken: text("access_token").notNull(),
+  refreshToken: text("refresh_token").notNull(),
+  tokenExpiry: timestamp("token_expiry", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, table => [check("google_sheet_connection_id_check", sql`${table.id} = 1`)]);
+
+// Durable row reservations survive timeouts/redeploys. No FK: an export remains
+// recorded even if the originating lead is later deleted.
+export const leadSheetExports = pgTable("lead_sheet_exports", {
+  leadId: integer("lead_id").notNull(),
+  spreadsheetId: text("spreadsheet_id").notNull(),
+  sheetId: integer("sheet_id").notNull(),
+  rowNumber: integer("row_number").notNull(),
+  metadataId: integer("metadata_id").notNull(),
+  payload: jsonb("payload").notNull(),
+  status: text("status").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, table => [
+  primaryKey({ name: "lead_sheet_exports_pkey", columns: [table.leadId, table.spreadsheetId] }),
+  unique("lead_sheet_exports_spreadsheet_id_sheet_id_row_number_key").on(table.spreadsheetId, table.sheetId, table.rowNumber),
+  unique("lead_sheet_exports_spreadsheet_id_metadata_id_key").on(table.spreadsheetId, table.metadataId),
+  check("lead_sheet_exports_status_check", sql`${table.status} IN ('pending', 'succeeded', 'uncertain')`),
+]);
 
 // Relations
 export const usersRelations = relations(users, ({ one, many }) => ({
