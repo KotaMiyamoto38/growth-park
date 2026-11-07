@@ -86,6 +86,18 @@ export const leads = pgTable("leads", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// Registration totals survive lead deletion; they are keyed by the original
+// introducer and registration month in Japan, not the scheduled meeting month.
+export const leadMonthlyCounters = pgTable("lead_monthly_counters", {
+  connectorId: integer("connector_id").notNull(),
+  registrationMonth: date("registration_month").notNull(),
+  registrationCount: integer("registration_count").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, table => ({
+  pk: primaryKey({ name: "lead_monthly_counters_pkey", columns: [table.connectorId, table.registrationMonth] }),
+  nonnegative: check("lead_monthly_counters_nonnegative", sql`${table.registrationCount} >= 0`),
+}));
+
 // Meetings table
 export const meetings = pgTable("meetings", {
   id: serial("id").primaryKey(),
@@ -331,6 +343,7 @@ export type InsertConnectorCompany = z.infer<typeof insertConnectorCompanySchema
 export type Supporter = typeof supporters.$inferSelect;
 export type InsertSupporter = z.infer<typeof insertSupporterSchema>;
 export type Lead = typeof leads.$inferSelect;
+export type CreatedLead = Lead & { monthlyLeadCount: number };
 export type InsertLead = z.infer<typeof insertLeadSchema>;
 export type Meeting = typeof meetings.$inferSelect;
 export type InsertMeeting = z.infer<typeof insertMeetingSchema>;
