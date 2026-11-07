@@ -49,6 +49,21 @@ interface GoogleSheetsStatus {
   message?: string;
 }
 
+const GOOGLE_SHEETS_ERROR_MESSAGES = {
+  "api-disabled": "Google Sheets APIが有効になっていません。管理者に有効化を依頼してから、もう一度連携してください。",
+  "destination-permission": "連携したGoogleアカウントから転記先を確認できません。両方のシートの共有設定で、編集権限があることを確認してください。",
+  expired: "Googleの接続期限が切れています。設定画面からもう一度連携してください。",
+  "missing-refresh-token": "Googleの連携許可を確認できませんでした。許可内容を確認して、もう一度連携してください。",
+  "missing-scope": "スプレッドシートの編集権限が許可されていません。Googleの連携画面で編集権限を許可して、もう一度連携してください。",
+  configuration: "Google連携の接続設定を確認できません。管理者に接続設定の確認を依頼してください。",
+  "invalid-state": "接続操作の有効期限が切れたか、開始したブラウザーと異なります。設定画面からもう一度連携してください。",
+  "admin-required": "Google連携には管理者権限が必要です。管理者アカウントでログインし直して、もう一度連携してください。",
+  cancelled: "Googleの連携許可がキャンセルされました。連携する場合は、設定画面からもう一度開始してください。",
+  "destination-changed": "転記先のシート構成が変更されています。管理者に確認してください。",
+  "account-unverified": "Googleアカウントの確認が完了していません。確認済みのGoogleアカウントで、もう一度連携してください。",
+  unknown: "Googleとの連携を完了できませんでした。時間をおいてもう一度連携し、解消しない場合は管理者に確認してください。",
+} as const;
+
 export default function SettingsPage() {
   const { user, logout } = useAuth();
   const { toast } = useToast();
@@ -167,7 +182,7 @@ export default function SettingsPage() {
   });
 
   useEffect(() => {
-    if (user?.role !== "AddBox") return;
+    if (!user) return;
     const url = new URL(window.location.href);
     const outcome = url.searchParams.get("googleSheets");
     if (!outcome) return;
@@ -175,16 +190,21 @@ export default function SettingsPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/google-sheets/status"] });
       toast({ title: "Googleスプレッドシートを連携しました", description: "転記先への接続を確認しました。転記には両方のシートの編集権限が必要です。" });
     } else {
+      const reason = url.searchParams.get("googleSheetsReason") || "unknown";
+      const description = Object.prototype.hasOwnProperty.call(GOOGLE_SHEETS_ERROR_MESSAGES, reason)
+        ? GOOGLE_SHEETS_ERROR_MESSAGES[reason as keyof typeof GOOGLE_SHEETS_ERROR_MESSAGES]
+        : GOOGLE_SHEETS_ERROR_MESSAGES.unknown;
       toast({
         title: "Google連携を完了できませんでした",
-        description: "対象の2枚のシートを編集できるGoogleアカウントで、もう一度連携してください。",
+        description,
         variant: "destructive",
       });
     }
     url.searchParams.delete("googleSheets");
+    url.searchParams.delete("googleSheetsReason");
     url.searchParams.delete("error");
     window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
-  }, [user?.role, queryClient, toast]);
+  }, [user, queryClient, toast]);
 
   // Load settings from localStorage
   useEffect(() => {

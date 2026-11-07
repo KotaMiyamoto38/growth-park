@@ -103,10 +103,10 @@ test("sheet routes enforce admin access, server-owned data and safe OAuth failur
     const state = new URL((await connect.json()).url).searchParams.get("state")!;
     const callback = `${base}${auth.SHEETS_CALLBACK_PATH}?state=${encodeURIComponent(state)}&code=SECRET_CODE`;
     const noCookie = await fetch(callback, { redirect: "manual" });
-    assert.equal(noCookie.headers.get("location"), "/settings?googleSheets=error");
+    assert.equal(noCookie.headers.get("location"), "/settings?googleSheets=error&googleSheetsReason=invalid-state");
     assert.equal(connectionCalls, 0);
     role = "Connector";
-    assert.equal((await fetch(callback, { headers: { cookie }, redirect: "manual" })).headers.get("location"), "/settings?googleSheets=error");
+    assert.equal((await fetch(callback, { headers: { cookie }, redirect: "manual" })).headers.get("location"), "/settings?googleSheets=error&googleSheetsReason=admin-required");
     assert.equal(connectionCalls, 0);
     role = "AddBox";
     const success = await fetch(callback, { headers: { cookie }, redirect: "manual" });
@@ -114,5 +114,62 @@ test("sheet routes enforce admin access, server-owned data and safe OAuth failur
     assert.equal(success.headers.get("referrer-policy"), "no-referrer");
     assert.equal(connectionCalls, 1);
     assert.equal(await (await fetch(`${base}${auth.SHEETS_CALLBACK_PATH}?state=legacy`)).text(), "calendar callback");
+  } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
+});
+
+test("Sheets callback exposes only fixed failure categories, never Google error details", async () => {
+  const secret = "SECRET_TOKEN_AUTH_CODE_PRIVATE_FILE";
+  const failures: Array<[unknown, string]> = [
+    [{ response: { status: 403, data: { error: { message: secret,
+      details: [{ reason: "SERVICE_DISABLED", metadata: { activationUrl: secret } }] } } } }, "api-disabled"],
+    [{ response: { status: 403, data: { error: { message: secret,
+      errors: [{ reason: "accessNotConfigured" }] } } } }, "api-disabled"],
+    [{ code: 403, errors: [{ reason: "accessNotConfigured", message: secret }] }, "api-disabled"],
+    [{ response: { status: 403, data: { error: { message: secret } } } }, "destination-permission"],
+    [{ response: { status: 404, data: { error: { message: secret } } } }, "destination-permission"],
+    [{ response: { status: 400, data: { error: "invalid_grant", error_description: secret } } }, "expired"],
+    [new auth.SheetsConnectionError(400, "Googleの連携許可を確認して、もう一度連携してください。"), "missing-refresh-token"],
+    [new auth.SheetsConnectionError(400, "スプレッドシートの編集権限が許可されていません。"), "missing-scope"],
+    [new auth.SheetsConnectionError(503, "Google連携の接続設定が不足しています。"), "configuration"],
+    [new auth.SheetsConnectionError(503, "Google連携の安全な接続設定が不足しています。"), "configuration"],
+    [new auth.SheetsConnectionError(409, "転記先のシート構成が変更されています。管理者に確認してください。"), "destination-changed"],
+    [new auth.SheetsConnectionError(400, secret, "account-unverified"), "account-unverified"],
+    [new auth.SheetsConnectionError(500, secret, secret as any), "unknown"],
+    [new Error(secret), "unknown"],
+    [{ message: `SERVICE_DISABLED invalid_grant ${secret}` }, "unknown"],
+    [null, "unknown"],
+  ];
+  let failure: unknown;
+  let connectionCalls = 0;
+  const deps = {
+    ...auth,
+    storage: { getUser: async () => ({ id: 7, role: "AddBox" }) },
+    validateSheetsState: () => 7,
+    completeSheetsConnection: async () => { connectionCalls++; throw failure; },
+  };
+  const app = express();
+  const pass: express.RequestHandler = (_req, _res, next) => next();
+  registerSheetRoutes(app, pass, () => pass, deps as any);
+  const server = app.listen(0, "127.0.0.1");
+  await new Promise<void>(resolve => server.once("listening", resolve));
+  const base = `http://127.0.0.1:${(server.address() as any).port}${auth.SHEETS_CALLBACK_PATH}?state=sheets.fixture`;
+  try {
+    for (const [error, reason] of failures) {
+      failure = error;
+      const response = await fetch(`${base}&code=${secret}`, { redirect: "manual" });
+      assert.equal(response.status, 302);
+      assert.equal(response.headers.get("location"), `/settings?googleSheets=error&googleSheetsReason=${reason}`);
+      assert.equal(response.headers.get("referrer-policy"), "no-referrer");
+      assert.equal(response.headers.get("cache-control"), "no-store");
+      assert.doesNotMatch(JSON.stringify([...response.headers]) + await response.text(), new RegExp(secret));
+    }
+    const callsBeforeDenied = connectionCalls;
+    for (const [query, reason] of [["error=access_denied", "cancelled"],
+      [`error=${secret}&error_description=${secret}`, "unknown"], ["", "invalid-state"]]) {
+      const response = await fetch(`${base}&${query}`, { redirect: "manual" });
+      assert.equal(response.headers.get("location"), `/settings?googleSheets=error&googleSheetsReason=${reason}`);
+      assert.doesNotMatch(await response.text(), new RegExp(secret));
+    }
+    assert.equal(connectionCalls, callsBeforeDenied);
   } finally { await new Promise<void>(resolve => server.close(() => resolve())); }
 });

@@ -702,7 +702,7 @@ export default function LeadsPage() {
                         <TableHead className="col-resizable" style={{width: '14%'}}>商談日時</TableHead>
                         <TableHead className="col-resizable" style={{width: '8%'}}>登録日</TableHead>
                         <TableHead className="col-resizable" style={{width: '18%'}}>商談リンク</TableHead>
-                        <TableHead style={{width: '5%'}}>操作</TableHead>
+                        <TableHead style={{ width: 120, minWidth: 120, paddingLeft: 8, paddingRight: 8 }}>操作</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -867,11 +867,14 @@ export default function LeadsPage() {
                               )}
                             </div>
                           </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
+                          <TableCell style={{ minWidth: 120, paddingLeft: 8, paddingRight: 8 }}>
+                            <div className="flex items-center gap-1">
                               <Button
                                 variant="ghost"
                                 size="sm"
+                                className="h-8 w-8 p-0 shrink-0"
+                                title="商談を編集"
+                                aria-label="商談を編集"
                                 onClick={() => {
                                   scrollPositionRef.current = window.scrollY;
                                   queryClient.invalidateQueries({ queryKey: [`/api/leads/${lead.id}`] });
@@ -885,6 +888,9 @@ export default function LeadsPage() {
                               <Button
                                 variant="ghost"
                                 size="sm"
+                                className="h-8 w-8 p-0 shrink-0"
+                                title="商談を削除"
+                                aria-label="商談を削除"
                                 onClick={() => handleDelete(lead.id)}
                               >
                                 <Trash2 className="h-4 w-4" />
@@ -897,7 +903,7 @@ export default function LeadsPage() {
                                   disabled={sheetExportMutation.isPending}
                                   title="スプレッドシートに転記"
                                   aria-label="スプレッドシートに転記"
-                                  className="text-green-700 hover:text-green-800"
+                                  className="h-8 w-8 p-0 shrink-0 text-green-700 hover:text-green-800"
                                 >
                                   {sheetExportMutation.isPending && sheetExportMutation.variables === lead.id ? (
                                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -928,7 +934,7 @@ export default function LeadsPage() {
                 <div className="leads-section">
                   <div className="flex items-center mb-6">
                     <div className="bg-green-100 text-green-800 px-3 py-1 rounded-md font-semibold text-sm">
-                      ▼ コネクター経由 ({connectorLeads.length}件) - 閲覧専用
+                      ▼ コネクター経由 ({connectorLeads.length}件) - {user?.role === "AddBox" ? "詳細・シート転記" : "閲覧専用"}
                     </div>
                   </div>
                   <Table className="leads-table">
@@ -944,7 +950,7 @@ export default function LeadsPage() {
                         <TableHead className="col-resizable" style={{width: '8%'}}>登録日</TableHead>
                         <TableHead className="col-resizable" style={{width: '16%'}}>商談リンク</TableHead>
                         <TableHead style={{width: '4%'}}>報告書</TableHead>
-                        <TableHead style={{width: '5%'}}>操作</TableHead>
+                        <TableHead style={{ width: 120, minWidth: 120, paddingLeft: 8, paddingRight: 8 }}>操作</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1119,15 +1125,18 @@ export default function LeadsPage() {
                               size="sm"
                               onClick={() => handleShowReportForm(lead)}
                               title="商談報告書を閲覧"
+                              aria-label="商談報告書を閲覧"
+                              className="h-8 w-8 p-0 shrink-0"
                             >
                               <FileText className="h-4 w-4 text-blue-500" />
                             </Button>
                           </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
+                          <TableCell style={{ minWidth: 120, paddingLeft: 8, paddingRight: 8 }}>
+                            <div className="flex items-center gap-1">
                               <Button
                                 variant="ghost"
                                 size="sm"
+                                className="h-8 w-8 p-0 shrink-0"
                                 onClick={() => {
                                   queryClient.invalidateQueries({ queryKey: [`/api/leads/${lead.id}`] });
                                   queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
@@ -1135,9 +1144,27 @@ export default function LeadsPage() {
                                   setShowNewForm(true);
                                 }}
                                 title="詳細を閲覧"
+                                aria-label="詳細を閲覧"
                               >
                                 <Eye className="h-4 w-4 text-gray-500" />
                               </Button>
+                              {user?.role === "AddBox" && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleSheetExport(lead)}
+                                  disabled={sheetExportMutation.isPending}
+                                  title="スプレッドシートに転記"
+                                  aria-label="スプレッドシートに転記"
+                                  className="h-8 w-8 p-0 shrink-0 text-green-700 hover:text-green-800"
+                                >
+                                  {sheetExportMutation.isPending && sheetExportMutation.variables === lead.id ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <FileSpreadsheet className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              )}
                             </div>
                           </TableCell>
                         </TableRow>

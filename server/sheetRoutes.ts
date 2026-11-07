@@ -37,13 +37,22 @@ export function registerSheetRoutes(app: Express, authenticate: RequestHandler,
     try {
       const userId = deps.validateSheetsState(state, req.headers.cookie);
       const actor = await deps.storage.getUser(userId);
-      if (!actor || actor.role !== "AddBox" || req.query.error
-        || typeof req.query.code !== "string" || !req.query.code) throw new Error("invalid_callback");
+      if (!actor || actor.role !== "AddBox") {
+        throw new auth.SheetsConnectionError(403, "管理者としてログインし直してください。", "admin-required");
+      }
+      if (req.query.error) {
+        throw new auth.SheetsConnectionError(400, "Googleの連携許可を確認してください。",
+          req.query.error === "access_denied" ? "cancelled" : "unknown");
+      }
+      if (typeof req.query.code !== "string" || !req.query.code) {
+        throw new auth.SheetsConnectionError(400, "設定画面から連携をやり直してください。", "invalid-state");
+      }
       await deps.completeSheetsConnection(req.query.code);
       res.redirect("/settings?googleSheets=connected");
-    } catch {
+    } catch (error) {
       // Google errors may contain auth codes, headers, tokens or private file details.
-      res.redirect("/settings?googleSheets=error");
+      const reason = auth.getSheetsConnectionFailureReason(error);
+      res.redirect(`/settings?googleSheets=error&googleSheetsReason=${reason}`);
     }
   });
 
