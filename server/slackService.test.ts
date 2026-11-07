@@ -109,17 +109,33 @@ test('lead notification fields keep one-line order, missing values and Slack len
     });
     const message = calls[0];
     assert.ok(message.blocks[0].text.text.length <= 150);
-    assert.ok(message.blocks[1].text.text.length <= 3000);
-    assert.deepEqual(message.blocks[1].text.text.split('\n').map((line: string) => line.split(':')[0]),
+    const sections = message.blocks.filter((block: any) => block.type === 'section' && block.text.type === 'plain_text');
+    assert.ok(sections.length > 1, 'long fields should use multiple sections rather than be cut to 400 characters');
+    assert.ok(sections.every((block: any) => block.text.text.length <= 3000));
+    const lines: string[] = sections.flatMap((block: any) => block.text.text.split('\n'));
+    assert.deepEqual(lines.map(line => line.split(':')[0]),
       ['企業名', 'HP', '事業内容', '役職', 'お名前', 'ニーズ']);
-    assert.ok(message.blocks[1].text.text.split('\n').every((line: string) => line.endsWith('…')));
+    assert.ok(lines.every(line => line.endsWith('…（続きは商談管理で確認）')));
+    assert.ok(lines[2].length > 2400 && lines[5].length > 2400, 'business content and needs should retain their larger allowance');
+    assert.equal(message.blocks.at(-2).elements[0].text, '商談ID: 123');
+    assert.equal(message.blocks.at(-1).text.text, '<https://growth-park.onrender.com/leads|商談管理を開く>');
     assert.doesNotMatch(message.blocks[0].text.text, /[\r\n]/);
+
+    const businessContent = '事'.repeat(2000);
+    const needs = 'ニ'.repeat(1200);
+    await notifyNewLeadRegistration({ ...lead, businessContent, needs });
+    const intactSections = calls[1].blocks.filter((block: any) => block.type === 'section' && block.text.type === 'plain_text');
+    assert.equal(intactSections.length, 2);
+    const intactLines = intactSections.flatMap((block: any) => block.text.text.split('\n'));
+    assert.equal(intactLines[2], `事業内容: ${businessContent}`);
+    assert.equal(intactLines[5], `ニーズ: ${needs}`);
 
     await notifyNewLeadRegistration({
       ...lead, companyName: '', companyWebsite: null, businessContent: '\r\n\t',
       position: undefined, contactPerson: '  ', needs: null,
     });
-    assert.deepEqual(calls[1].blocks[1].text.text.split('\n'),
+    assert.equal(calls[2].blocks.length, 4, 'short messages should retain one body section');
+    assert.deepEqual(calls[2].blocks[1].text.text.split('\n'),
       ['企業名', 'HP', '事業内容', '役職', 'お名前', 'ニーズ'].map(label => `${label}: 未設定`));
   } finally {
     transport.mock.restore();
