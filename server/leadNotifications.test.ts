@@ -22,6 +22,8 @@ test('all lead creation routes notify once after save and retain saved data if S
   ];
   const saved: any[] = [];
   const sent: any[] = [];
+  // The referrer already has one registration this month; the admin has three.
+  const monthlyCounts = new Map([[2, 1], [1, 3]]);
   let failStorage = false;
   let failSlack = false;
   const mocks = [
@@ -33,7 +35,9 @@ test('all lead creation routes notify once after save and retain saved data if S
     mock.method(storage, 'getSupporter', async () => ({ id: 7, companyName: '支援先' })),
     mock.method(storage, 'createLead', async (data: any) => {
       if (failStorage) throw new Error('simulated storage failure');
-      const lead = { ...data, id: 100 + saved.length };
+      const monthlyLeadCount = (monthlyCounts.get(data.connectorId) || 0) + 1;
+      monthlyCounts.set(data.connectorId, monthlyLeadCount);
+      const lead = { ...data, id: 100 + saved.length, monthlyLeadCount };
       saved.push(lead);
       return lead;
     }),
@@ -58,8 +62,9 @@ test('all lead creation routes notify once after save and retain saved data if S
     body: JSON.stringify(body),
   });
   const payload = {
-    connectorId: 2, supporterId: 7, companyName: '企業名', businessContent: '非公開の事業内容',
-    contactPerson: '非公開の担当者', contactInfo: 'private@example.com', needs: '非公開のニーズ',
+    connectorId: 2, supporterId: 7, companyName: '企業名', businessContent: '通知対象の事業内容',
+    companyWebsite: 'https://example.com', position: '代表取締役', monthlyLeadCount: 999,
+    contactPerson: '通知対象の担当者', contactInfo: 'private@example.com', needs: '通知対象のニーズ',
     assignedPerson: '浜野', source: 'そのほか', meetingFee: 50000,
   };
   try {
@@ -76,7 +81,9 @@ test('all lead creation routes notify once after save and retain saved data if S
 
     const webhook = {
       event: 'meeting.completed.beta',
-      data: { playbook: { 'トスアップ判定': '○', '企業名': '連携企業', '支援先名': '支援先', '担当者名': '浜野' } },
+      data: { company_url: 'https://webhook.example.com', contact_name: '連携担当者',
+        playbook: { 'トスアップ判定': '○', '企業名': '連携企業', '支援先名': '支援先',
+          '担当者名': '浜野', '事業内容': '連携事業', '担当者役職': '代表', 'ニーズ': '連携ニーズ' } },
     };
     assert.equal((await request('/api/webhooks/frictio', undefined, { ...webhook, event: 'other' })).status, 200);
     assert.equal(sent.length, 2);
@@ -84,7 +91,21 @@ test('all lead creation routes notify once after save and retain saved data if S
     assert.equal(saved.length, 3);
     assert.equal(sent.length, 3);
     assert.ok(sent.every(call => call.token === 'new-test-token' && call.args.channel === 'C_NEW'));
-    assert.doesNotMatch(JSON.stringify(sent), /非公開|private@example|50000|C_LEGACY/);
+    assert.deepEqual(sent.map(call => call.args.blocks[0].text.text), [
+      '紹介者から2件目のトスアップです🎉',
+      '紹介者から3件目のトスアップです🎉',
+      '宮本から4件目のトスアップです🎉',
+    ]);
+    assert.equal(sent[0].args.blocks[1].text.text,
+      '企業名: 企業名\nHP: https://example.com\n事業内容: 通知対象の事業内容\n役職: 代表取締役\nお名前: 通知対象の担当者\nニーズ: 通知対象のニーズ');
+    assert.equal(sent[1].args.blocks[1].text.text, sent[0].args.blocks[1].text.text);
+    assert.equal(sent[2].args.blocks[1].text.text,
+      '企業名: 連携企業\nHP: https://webhook.example.com\n事業内容: 連携事業\n役職: 代表\nお名前: 連携担当者\nニーズ: 連携ニーズ');
+    for (let i = 0; i < sent.length; i++) {
+      assert.equal(sent[i].args.blocks[2].elements[0].text, `商談ID: ${saved[i].id}`);
+      assert.match(sent[i].args.blocks[3].text.text, /growth-park\.onrender\.com\/leads\|商談管理を開く/);
+    }
+    assert.doesNotMatch(JSON.stringify(sent), /private@example|50000|C_LEGACY|999件目|Frictio Webhook|支援先|浜野/);
 
     failStorage = true;
     assert.equal((await request('/api/connectors/2/leads', 2, payload)).status, 500);

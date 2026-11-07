@@ -147,27 +147,57 @@ export async function sendSlackLeadTestNotification(): Promise<void> {
 export async function notifyNewLeadRegistration(leadData: {
   leadId: number;
   connectorName: string;
+  monthlyLeadCount: number;
   companyName: string;
-  supporterCompanyName: string;
-  assignedPerson: string;
+  companyWebsite?: string | null;
+  businessContent: string;
+  position?: string | null;
+  contactPerson: string;
+  needs?: string | null;
 }): Promise<void> {
   try {
-    // Plain-text blocks prevent names or company input from becoming mentions/links.
-    const field = (label: string, value: string) => ({
-      type: "plain_text" as const,
-      text: `${label}: ${value || "未設定"}`.slice(0, 1900),
-      emoji: false,
-    });
+    // Keep every submitted value on one line. Long descriptions retain more
+    // detail and are grouped into sections under Slack's 3000-character limit.
+    const singleLine = (value: string | null | undefined, limit = 400): string => {
+      const normalized = (value || "").replace(/[\s\u0000-\u001f\u007f]+/g, " ").trim() || "未設定";
+      const suffix = "…（続きは商談管理で確認）";
+      return normalized.length <= limit ? normalized
+        : `${normalized.slice(0, limit - suffix.length).replace(/[\uD800-\uDBFF]$/, "")}${suffix}`;
+    };
+    const count = Number.isSafeInteger(leadData.monthlyLeadCount) && leadData.monthlyLeadCount > 0
+      ? `${leadData.monthlyLeadCount}件目の` : "新しい";
+    const title = `${singleLine(leadData.connectorName, 100)}から${count}トスアップです🎉`;
+    // Plain-text blocks prevent all submitted names, content and URLs from
+    // becoming Slack mentions or markup. Only the fixed app link is actionable.
+    const fields = [
+      ["企業名", leadData.companyName, 400],
+      ["HP", leadData.companyWebsite, 400],
+      ["事業内容", leadData.businessContent, 2500],
+      ["役職", leadData.position, 400],
+      ["お名前", leadData.contactPerson, 400],
+      ["ニーズ", leadData.needs, 2500],
+    ] as const;
+    const bodySections: string[] = [];
+    let section = "";
+    for (const [label, value, limit] of fields) {
+      const line = `${label}: ${singleLine(value, limit)}`;
+      if (section && section.length + 1 + line.length > 3000) {
+        bodySections.push(section);
+        section = line;
+      } else {
+        section = section ? `${section}\n${line}` : line;
+      }
+    }
+    if (section) bodySections.push(section);
     await postLeadChannelMessage({
-      text: "新規商談が登録されました",
+      // The notification preview uses mrkdwn semantics even when blocks are
+      // plain text, so do not allow a submitted connector name to become markup.
+      text: title.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"),
       blocks: [
-        { type: "header", text: { type: "plain_text", text: "新規商談登録", emoji: false } },
-        { type: "section", fields: [
-          field("企業名", leadData.companyName),
-          field("紹介者", leadData.connectorName),
-          field("ZETTAICHI担当者", leadData.assignedPerson),
-          field("支援先", leadData.supporterCompanyName),
-        ] },
+        { type: "header", text: { type: "plain_text", text: title, emoji: false } },
+        ...bodySections.map(text => ({
+          type: "section" as const, text: { type: "plain_text" as const, text, emoji: false },
+        })),
         { type: "context", elements: [{ type: "plain_text", text: `商談ID: ${leadData.leadId}`, emoji: false }] },
         { type: "section", text: { type: "mrkdwn", text: "<https://growth-park.onrender.com/leads|商談管理を開く>" } },
       ],

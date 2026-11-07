@@ -813,13 +813,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validatedData = insertLeadSchema.parse(requestData);
       const lead = await storage.createLead(validatedData);
       try {
-        const supporter = lead.supporterId ? await storage.getSupporter(lead.supporterId) : null;
         await notifyNewLeadRegistration({
           leadId: lead.id,
           connectorName: (req as any).user.name,
           companyName: lead.companyName,
-          supporterCompanyName: supporter?.companyName || "未割り当て",
-          assignedPerson: lead.assignedPerson || "",
+          monthlyLeadCount: lead.monthlyLeadCount,
+          companyWebsite: lead.companyWebsite,
+          businessContent: lead.businessContent,
+          position: lead.position,
+          contactPerson: lead.contactPerson,
+          needs: lead.needs,
         });
       } catch {
         console.error("Failed to prepare Slack notification for connector lead");
@@ -907,17 +910,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Send Slack notification for new lead registration
       try {
-        // Get connector and supporter information for the notification
+        // Use the saved referrer and monthly count for the notification
         const connector = await storage.getUser(lead.connectorId);
-        const supporter = lead.supporterId ? await storage.getSupporter(lead.supporterId) : null;
         
         if (connector) {
           await notifyNewLeadRegistration({
             leadId: lead.id,
             connectorName: connector.name,
             companyName: lead.companyName,
-            supporterCompanyName: supporter?.companyName || "未割り当て",
-            assignedPerson: lead.assignedPerson || ""
+            monthlyLeadCount: lead.monthlyLeadCount,
+            companyWebsite: lead.companyWebsite,
+            businessContent: lead.businessContent,
+            position: lead.position,
+            contactPerson: lead.contactPerson,
+            needs: lead.needs,
           });
         }
       } catch {
@@ -1677,10 +1683,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         await notifyNewLeadRegistration({
           leadId: newLead.id,
-          connectorName: "Frictio Webhook",
-          companyName: leadData.companyName,
-          supporterCompanyName: matchedSupporter?.companyName || "未設定",
-          assignedPerson: assignedPerson || "未設定",
+          connectorName: addboxUser.name,
+          companyName: newLead.companyName,
+          monthlyLeadCount: newLead.monthlyLeadCount,
+          companyWebsite: newLead.companyWebsite,
+          businessContent: newLead.businessContent,
+          position: newLead.position,
+          contactPerson: newLead.contactPerson,
+          needs: newLead.needs,
         });
       } catch {
         console.error("Frictio Webhook: Slack通知の準備に失敗しました");
