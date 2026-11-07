@@ -147,27 +147,42 @@ export async function sendSlackLeadTestNotification(): Promise<void> {
 export async function notifyNewLeadRegistration(leadData: {
   leadId: number;
   connectorName: string;
+  monthlyLeadCount: number;
   companyName: string;
-  supporterCompanyName: string;
-  assignedPerson: string;
+  companyWebsite?: string | null;
+  businessContent: string;
+  position?: string | null;
+  contactPerson: string;
+  needs?: string | null;
 }): Promise<void> {
   try {
-    // Plain-text blocks prevent names or company input from becoming mentions/links.
-    const field = (label: string, value: string) => ({
-      type: "plain_text" as const,
-      text: `${label}: ${value || "未設定"}`.slice(0, 1900),
-      emoji: false,
-    });
+    // Keep every submitted value on one line, and leave room under Slack's
+    // 150-character header / 3000-character section limits even for long inputs.
+    const singleLine = (value: string | null | undefined, limit = 400): string => {
+      const normalized = (value || "").replace(/[\s\u0000-\u001f\u007f]+/g, " ").trim() || "未設定";
+      return normalized.length <= limit ? normalized
+        : `${normalized.slice(0, limit - 1).replace(/[\uD800-\uDBFF]$/, "")}…`;
+    };
+    const count = Number.isSafeInteger(leadData.monthlyLeadCount) && leadData.monthlyLeadCount > 0
+      ? `${leadData.monthlyLeadCount}件目の` : "新しい";
+    const title = `${singleLine(leadData.connectorName, 100)}から${count}トスアップです🎉`;
+    // Plain-text blocks prevent all submitted names, content and URLs from
+    // becoming Slack mentions or markup. Only the fixed app link is actionable.
+    const body = [
+      ["企業名", leadData.companyName],
+      ["HP", leadData.companyWebsite],
+      ["事業内容", leadData.businessContent],
+      ["役職", leadData.position],
+      ["お名前", leadData.contactPerson],
+      ["ニーズ", leadData.needs],
+    ].map(([label, value]) => `${label}: ${singleLine(value)}`).join("\n");
     await postLeadChannelMessage({
-      text: "新規商談が登録されました",
+      // The notification preview uses mrkdwn semantics even when blocks are
+      // plain text, so do not allow a submitted connector name to become markup.
+      text: title.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"),
       blocks: [
-        { type: "header", text: { type: "plain_text", text: "新規商談登録", emoji: false } },
-        { type: "section", fields: [
-          field("企業名", leadData.companyName),
-          field("紹介者", leadData.connectorName),
-          field("ZETTAICHI担当者", leadData.assignedPerson),
-          field("支援先", leadData.supporterCompanyName),
-        ] },
+        { type: "header", text: { type: "plain_text", text: title, emoji: false } },
+        { type: "section", text: { type: "plain_text", text: body, emoji: false } },
         { type: "context", elements: [{ type: "plain_text", text: `商談ID: ${leadData.leadId}`, emoji: false }] },
         { type: "section", text: { type: "mrkdwn", text: "<https://growth-park.onrender.com/leads|商談管理を開く>" } },
       ],

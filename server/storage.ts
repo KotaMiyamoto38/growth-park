@@ -15,6 +15,7 @@ import {
   type Supporter,
   type InsertSupporter,
   type Lead,
+  type CreatedLead,
   type InsertLead,
   type Meeting,
   type InsertMeeting,
@@ -29,6 +30,7 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { deleteAccount } from "./accountDeletion";
+import { createLeadWithMonthlyCount } from "./leadMonthlyCount";
 import { eq, and, gte, lte, lt, desc, asc, or, isNotNull, sql } from "drizzle-orm";
 
 export interface IStorage {
@@ -57,7 +59,7 @@ export interface IStorage {
   getLead(id: number): Promise<Lead | undefined>;
   getLeads(filters?: { connectorId?: number; supporterId?: number; status?: string; startDate?: Date; endDate?: Date }): Promise<Lead[]>;
   getLeadsByConnector(connectorId: number): Promise<Lead[]>;
-  createLead(lead: InsertLead): Promise<Lead>;
+  createLead(lead: InsertLead): Promise<CreatedLead>;
   updateLead(id: number, lead: Partial<InsertLead>): Promise<Lead>;
   deleteLead(id: number): Promise<void>;
   
@@ -320,12 +322,8 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(leads.createdAt));
   }
 
-  async createLead(insertLead: InsertLead): Promise<Lead> {
-    const [lead] = await db
-      .insert(leads)
-      .values([insertLead])
-      .returning();
-    return lead;
+  async createLead(insertLead: InsertLead): Promise<CreatedLead> {
+    return createLeadWithMonthlyCount(db, insertLead);
   }
 
   async updateLead(id: number, updateLead: Partial<InsertLead>): Promise<Lead> {

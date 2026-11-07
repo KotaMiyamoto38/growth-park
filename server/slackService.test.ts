@@ -12,14 +12,19 @@ const { notifyNewLeadRegistration, notifyNewConnectorRegistration, notifyMeeting
 const lead = {
   leadId: 123,
   companyName: '株式会社テスト <!channel>',
-  connectorName: '紹介者 <@U123>',
-  assignedPerson: '浜野',
-  supporterCompanyName: '支援先 <https://example.com|リンク>',
+  connectorName: '紹介者 <@U123> & <https://example.com|リンク>',
+  monthlyLeadCount: 3,
+  companyWebsite: 'https://example.com/company',
+  businessContent: '事業支援\n\n<!everyone>',
+  position: '代表取締役',
+  contactPerson: '担当者 <@U456>',
+  needs: '営業支援 <https://example.com|相談>',
   // Extra database fields must never reach Slack.
-  contactPerson: 'PRIVATE CONTACT',
   contactInfo: 'private@example.com',
   meetingFee: 987654,
-  needs: 'PRIVATE NEEDS',
+  password: 'PRIVATE_PASSWORD',
+  assignedPerson: 'PRIVATE_ASSIGNEE',
+  supporterCompanyName: 'PRIVATE_SUPPORTER',
 };
 
 test('lead notifications use only the dedicated channel and safe minimal content', async () => {
@@ -51,30 +56,73 @@ test('lead notifications use only the dedicated channel and safe minimal content
     assert.equal(message.parse, 'none');
     assert.equal(message.unfurl_links, false);
     assert.equal(message.unfurl_media, false);
-    assert.deepEqual(message.blocks[1].fields.map((field: any) => field.type), Array(4).fill('plain_text'));
-    assert.ok(message.blocks[1].fields.some((field: any) => field.text.includes('<!channel>')));
+    assert.equal(message.blocks[0].text.type, 'plain_text');
+    assert.equal(message.blocks[0].text.text, `${lead.connectorName}から3件目のトスアップです🎉`);
+    assert.equal(message.text, '紹介者 &lt;@U123&gt; &amp; &lt;https://example.com|リンク&gt;から3件目のトスアップです🎉');
+    assert.doesNotMatch(message.text, /<|>/, 'notification previews must not contain actionable mentions or links');
+    assert.equal(message.blocks[1].text.type, 'plain_text');
+    assert.deepEqual(message.blocks[1].text.text.split('\n'), [
+      `企業名: ${lead.companyName}`,
+      `HP: ${lead.companyWebsite}`,
+      '事業内容: 事業支援 <!everyone>',
+      `役職: ${lead.position}`,
+      `お名前: ${lead.contactPerson}`,
+      `ニーズ: ${lead.needs}`,
+    ]);
     assert.equal(message.blocks[2].elements[0].text, '商談ID: 123');
     const markdown = message.blocks.filter((block: any) => block.text?.type === 'mrkdwn');
     assert.deepEqual(markdown, [{ type: 'section', text: { type: 'mrkdwn', text: '<https://growth-park.onrender.com/leads|商談管理を開く>' } }]);
     assert.doesNotMatch(JSON.stringify(message), /PRIVATE|private@example|987654/);
 
-    await notifyNewLeadRegistration({ ...lead, companyName: '長'.repeat(10000), assignedPerson: '' });
-    assert.ok(calls[1].args.blocks[1].fields.every((field: any) => field.text.length <= 2000));
-    assert.equal(calls[1].args.blocks[1].fields[2].text, 'ZETTAICHI担当者: 未設定');
-
     await notifyNewConnectorRegistration({ name: '登録者', email: 'legacy@example.com' });
     await notifyMeetingReport({ leadId: 123, companyName: '企業', contactPerson: '担当者', connectorName: '紹介者' });
-    assert.deepEqual(calls.slice(2).map(call => [call.token, call.args.channel]), [
+    assert.deepEqual(calls.slice(1).map(call => [call.token, call.args.channel]), [
       ['legacy-test-token', 'C_LEGACY'], ['legacy-test-token', 'C_LEGACY'],
     ]);
     delete process.env.SLACK_BOT_TOKEN;
     delete process.env.SLACK_CHANNEL_ID;
     await notifyNewConnectorRegistration({ name: '登録者', email: 'legacy@example.com' });
     await notifyMeetingReport({ leadId: 123, companyName: '企業', contactPerson: '担当者', connectorName: '紹介者' });
-    assert.equal(calls.length, 4, 'legacy events must not use the new lead-only destination');
+    assert.equal(calls.length, 3, 'legacy events must not use the new lead-only destination');
   } finally {
     transport.mock.restore();
     warn.mock.restore();
+    log.mock.restore();
+  }
+});
+
+test('lead notification fields keep one-line order, missing values and Slack length limits', async () => {
+  process.env.SLACK_LEAD_BOT_TOKEN = 'new-test-token';
+  process.env.SLACK_LEAD_CHANNEL_ID = 'C_NEW';
+  const calls: any[] = [];
+  const transport = mock.method(WebClient.prototype, 'apiCall', async (_method: string, args: any) => {
+    calls.push(args);
+    return { ok: true, ts: '123.456' };
+  });
+  const log = mock.method(console, 'log', () => {});
+  try {
+    const long = '長い文章🎉\r\n'.repeat(1000);
+    await notifyNewLeadRegistration({
+      ...lead, connectorName: long, monthlyLeadCount: Number.MAX_SAFE_INTEGER,
+      companyName: long, companyWebsite: long, businessContent: long,
+      position: long, contactPerson: long, needs: long,
+    });
+    const message = calls[0];
+    assert.ok(message.blocks[0].text.text.length <= 150);
+    assert.ok(message.blocks[1].text.text.length <= 3000);
+    assert.deepEqual(message.blocks[1].text.text.split('\n').map((line: string) => line.split(':')[0]),
+      ['企業名', 'HP', '事業内容', '役職', 'お名前', 'ニーズ']);
+    assert.ok(message.blocks[1].text.text.split('\n').every((line: string) => line.endsWith('…')));
+    assert.doesNotMatch(message.blocks[0].text.text, /[\r\n]/);
+
+    await notifyNewLeadRegistration({
+      ...lead, companyName: '', companyWebsite: null, businessContent: '\r\n\t',
+      position: undefined, contactPerson: '  ', needs: null,
+    });
+    assert.deepEqual(calls[1].blocks[1].text.text.split('\n'),
+      ['企業名', 'HP', '事業内容', '役職', 'お名前', 'ニーズ'].map(label => `${label}: 未設定`));
+  } finally {
+    transport.mock.restore();
     log.mock.restore();
   }
 });
